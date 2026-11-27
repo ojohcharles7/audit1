@@ -1,6 +1,3 @@
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
-
 CREATE TABLE IF NOT EXISTS regions (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
@@ -322,6 +319,7 @@ CREATE TABLE IF NOT EXISTS fraud_cases (
 );
 
 CREATE TABLE IF NOT EXISTS fraud_updates (
+  seq BIGSERIAL NOT NULL,
   id TEXT PRIMARY KEY,
   case_id TEXT NOT NULL REFERENCES fraud_cases(id) ON DELETE CASCADE,
   kind TEXT NOT NULL,
@@ -427,6 +425,7 @@ CREATE TABLE IF NOT EXISTS email_outbox (
 );
 
 CREATE TABLE IF NOT EXISTS activity_logs (
+  seq BIGSERIAL NOT NULL,
   id TEXT PRIMARY KEY,
   actor_id TEXT,
   action TEXT NOT NULL,
@@ -472,53 +471,52 @@ CREATE INDEX IF NOT EXISTS idx_documents_audit ON documents(audit_id);
 CREATE INDEX IF NOT EXISTS idx_documents_case ON documents(fraud_case_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
-CREATE TRIGGER IF NOT EXISTS trg_activity_no_update
-BEFORE UPDATE ON activity_logs
+CREATE OR REPLACE FUNCTION deny_activity_mutation() RETURNS trigger AS $fn$
 BEGIN
-  SELECT RAISE(ABORT, 'activity logs are append-only');
+  RAISE EXCEPTION 'activity logs are append-only';
 END;
+$fn$ LANGUAGE plpgsql;
 
-CREATE TRIGGER IF NOT EXISTS trg_activity_no_delete
-BEFORE DELETE ON activity_logs
-BEGIN
-  SELECT RAISE(ABORT, 'activity logs are append-only');
-END;
+DROP TRIGGER IF EXISTS trg_activity_no_update ON activity_logs;
+CREATE TRIGGER trg_activity_no_update BEFORE UPDATE ON activity_logs FOR EACH ROW EXECUTE FUNCTION deny_activity_mutation();
+DROP TRIGGER IF EXISTS trg_activity_no_delete ON activity_logs;
+CREATE TRIGGER trg_activity_no_delete BEFORE DELETE ON activity_logs FOR EACH ROW EXECUTE FUNCTION deny_activity_mutation();
 
-CREATE TRIGGER IF NOT EXISTS trg_fraud_updates_no_update
-BEFORE UPDATE ON fraud_updates
+CREATE OR REPLACE FUNCTION deny_fraud_update_mutation() RETURNS trigger AS $fn$
 BEGIN
-  SELECT RAISE(ABORT, 'fraud investigation updates are append-only');
+  RAISE EXCEPTION 'fraud investigation updates are append-only';
 END;
+$fn$ LANGUAGE plpgsql;
 
-CREATE TRIGGER IF NOT EXISTS trg_fraud_updates_no_delete
-BEFORE DELETE ON fraud_updates
-BEGIN
-  SELECT RAISE(ABORT, 'fraud investigation updates are append-only');
-END;
+DROP TRIGGER IF EXISTS trg_fraud_updates_no_update ON fraud_updates;
+CREATE TRIGGER trg_fraud_updates_no_update BEFORE UPDATE ON fraud_updates FOR EACH ROW EXECUTE FUNCTION deny_fraud_update_mutation();
+DROP TRIGGER IF EXISTS trg_fraud_updates_no_delete ON fraud_updates;
+CREATE TRIGGER trg_fraud_updates_no_delete BEFORE DELETE ON fraud_updates FOR EACH ROW EXECUTE FUNCTION deny_fraud_update_mutation();
 
-CREATE TRIGGER IF NOT EXISTS trg_responses_no_insert_locked
-BEFORE INSERT ON audit_responses
-WHEN (SELECT locked_at FROM audits WHERE id = NEW.audit_id) IS NOT NULL
+CREATE OR REPLACE FUNCTION deny_locked_response() RETURNS trigger AS $fn$
+DECLARE
+  target_audit TEXT;
 BEGIN
-  SELECT RAISE(ABORT, 'audit is submitted and locked');
+  target_audit := COALESCE(NEW.audit_id, OLD.audit_id);
+  IF (SELECT locked_at FROM audits WHERE id = target_audit) IS NOT NULL THEN
+    RAISE EXCEPTION 'audit is submitted and locked';
+  END IF;
+  RETURN COALESCE(NEW, OLD);
 END;
+$fn$ LANGUAGE plpgsql;
 
-CREATE TRIGGER IF NOT EXISTS trg_responses_no_update_locked
-BEFORE UPDATE ON audit_responses
-WHEN (SELECT locked_at FROM audits WHERE id = OLD.audit_id) IS NOT NULL
-BEGIN
-  SELECT RAISE(ABORT, 'audit is submitted and locked');
-END;
+DROP TRIGGER IF EXISTS trg_responses_no_insert_locked ON audit_responses;
+CREATE TRIGGER trg_responses_no_insert_locked BEFORE INSERT ON audit_responses FOR EACH ROW EXECUTE FUNCTION deny_locked_response();
+DROP TRIGGER IF EXISTS trg_responses_no_update_locked ON audit_responses;
+CREATE TRIGGER trg_responses_no_update_locked BEFORE UPDATE ON audit_responses FOR EACH ROW EXECUTE FUNCTION deny_locked_response();
+DROP TRIGGER IF EXISTS trg_responses_no_delete_locked ON audit_responses;
+CREATE TRIGGER trg_responses_no_delete_locked BEFORE DELETE ON audit_responses FOR EACH ROW EXECUTE FUNCTION deny_locked_response();
 
-CREATE TRIGGER IF NOT EXISTS trg_responses_no_delete_locked
-BEFORE DELETE ON audit_responses
-WHEN (SELECT locked_at FROM audits WHERE id = OLD.audit_id) IS NOT NULL
+CREATE OR REPLACE FUNCTION deny_report_delete() RETURNS trigger AS $fn$
 BEGIN
-  SELECT RAISE(ABORT, 'audit is submitted and locked');
+  RAISE EXCEPTION 'audit reports are permanent records';
 END;
+$fn$ LANGUAGE plpgsql;
 
-CREATE TRIGGER IF NOT EXISTS trg_reports_no_delete
-BEFORE DELETE ON audit_reports
-BEGIN
-  SELECT RAISE(ABORT, 'audit reports are permanent records');
-END;
+DROP TRIGGER IF EXISTS trg_reports_no_delete ON audit_reports;
+CREATE TRIGGER trg_reports_no_delete BEFORE DELETE ON audit_reports FOR EACH ROW EXECUTE FUNCTION deny_report_delete();

@@ -14,14 +14,14 @@ export default async function LogsPage({ searchParams }: { searchParams: Promise
   const tab = sp.tab === "logins" ? "logins" : "activity";
   const q = typeof sp.q === "string" ? sp.q : "";
   const canSeeAll = ["head_audit", "audit_manager", "executive"].includes(user.role);
-  const chain = verifyActivityChain();
-  const logs = all<{ id: string; actor_name: string | null; actor_role: string | null; action: string; entity_type: string; entity_id: string | null; summary: string; ip: string | null; user_agent: string | null; hash: string; created_at: string }>(
+  const chain = await verifyActivityChain();
+  const logs = await all<{ id: string; actor_name: string | null; actor_role: string | null; action: string; entity_type: string; entity_id: string | null; summary: string; ip: string | null; user_agent: string | null; hash: string; created_at: string }>(
     `SELECT l.*, u.name actor_name, u.role actor_role FROM activity_logs l LEFT JOIN users u ON u.id=l.actor_id
      WHERE (? = 1 OR l.actor_id = ?) AND (? = '' OR l.action LIKE ? OR l.summary LIKE ? OR u.name LIKE ?)
      ORDER BY l.created_at DESC LIMIT 200`,
     [canSeeAll ? 1 : 0, user.id, q, `%${q}%`, `%${q}%`, `%${q}%`],
   );
-  const logins = all<{ id: string; email: string; success: number; ip: string | null; user_agent: string | null; reason: string | null; created_at: string }>(
+  const logins = await all<{ id: string; email: string; success: number; ip: string | null; user_agent: string | null; reason: string | null; created_at: string }>(
     `SELECT * FROM login_history WHERE (? = 1 OR user_id = ?) ORDER BY created_at DESC LIMIT 100`,
     [canSeeAll ? 1 : 0, user.id],
   );

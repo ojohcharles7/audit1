@@ -21,18 +21,18 @@ function monthsBack(count: number) {
   return months;
 }
 
-export function dashboardData(scope: Scope, filters: ListFilters) {
+export async function dashboardData(scope: Scope, filters: ListFilters) {
   const aWhere = whereAudits(scope, filters, "a", "o");
   const scopeSql = outletScopeSql(scope, "o");
   const fWhere = whereFindings(scope, filters, "f", "o");
   const baseFilterParams = [filters.region, filters.state, filters.outlet].filter(Boolean) as string[];
 
-  const totalOutlets = get<{ c: number }>(
+  const totalOutlets = (await get<{ c: number }>(
     `SELECT count(*) c FROM outlets o WHERE ${scopeSql.sql} AND o.deleted_at IS NULL`,
     scopeSql.params,
-  )?.c ?? 0;
+  ))?.c ?? 0;
 
-  const auditCounts = all<{ status: string; c: number }>(
+  const auditCounts = await all<{ status: string; c: number }>(
     `SELECT a.status, count(*) c FROM audits a JOIN outlets o ON o.id = a.outlet_id
      WHERE ${aWhere.sql} AND a.status != 'cancelled' GROUP BY a.status`,
     aWhere.params,
@@ -44,33 +44,33 @@ export function dashboardData(scope: Scope, filters: ListFilters) {
     (byStatus.get("approved") ?? 0) +
     (byStatus.get("closed") ?? 0);
 
-  const overdueAudits = get<{ c: number }>(
+  const overdueAudits = (await get<{ c: number }>(
     `SELECT count(*) c FROM audits a JOIN outlets o ON o.id = a.outlet_id
-     WHERE ${aWhere.sql} AND (a.status = 'overdue' OR (a.status IN ('scheduled','in_progress') AND a.due_date < date('now')))`,
+     WHERE ${aWhere.sql} AND (a.status = 'overdue' OR (a.status IN ('scheduled','in_progress') AND a.due_date < to_char(CURRENT_DATE,'YYYY-MM-DD')))`,
     aWhere.params,
-  )?.c ?? 0;
+  ))?.c ?? 0;
 
   const monthStart = new Date();
   monthStart.setDate(1);
   monthStart.setHours(0, 0, 0, 0);
-  const auditedThisMonth = get<{ c: number }>(
+  const auditedThisMonth = (await get<{ c: number }>(
     `SELECT count(DISTINCT a.outlet_id) c FROM audits a JOIN outlets o ON o.id = a.outlet_id
      WHERE ${scopeSql.sql} AND a.status IN ('approved','closed','submitted','under_review') AND a.completed_at >= ?`,
     [...scopeSql.params, monthStart.toISOString()],
-  )?.c ?? 0;
+  ))?.c ?? 0;
 
-  const highRiskOutlets = get<{ c: number }>(
+  const highRiskOutlets = (await get<{ c: number }>(
     `SELECT count(*) c FROM outlets o WHERE ${scopeSql.sql} AND o.deleted_at IS NULL AND o.risk_rating IN ('high','critical')`,
     scopeSql.params,
-  )?.c ?? 0;
+  ))?.c ?? 0;
 
-  const openCritical = get<{ c: number }>(
+  const openCritical = (await get<{ c: number }>(
     `SELECT count(*) c FROM findings f JOIN outlets o ON o.id = f.outlet_id
      WHERE ${fWhere.sql} AND f.severity = 'critical' AND f.status NOT IN ('resolved','rejected')`,
     fWhere.params,
-  )?.c ?? 0;
+  ))?.c ?? 0;
 
-  const discrepancies = get<{ total: number; count: number }>(
+  const discrepancies = await get<{ total: number; count: number }>(
     `SELECT coalesce(sum(f.financial_impact_kobo),0) total, count(*) count FROM findings f JOIN outlets o ON o.id = f.outlet_id
      WHERE ${fWhere.sql} AND f.financial_impact_kobo > 0 AND f.status NOT IN ('resolved','rejected')`,
     fWhere.params,
@@ -85,24 +85,24 @@ export function dashboardData(scope: Scope, filters: ListFilters) {
         : scope.outletIds && scope.outletIds.length
           ? { sql: `fc.outlet_id IN (${scope.outletIds.map(() => "?").join(",")})`, params: scope.outletIds as unknown[] }
           : { sql: "1=0", params: [] as unknown[] };
-  const openFraud = get<{ c: number }>(
+  const openFraud = (await get<{ c: number }>(
     `SELECT count(*) c FROM fraud_cases fc WHERE ${fraudWhere.sql} AND fc.status NOT IN ('closed','referred')`,
     fraudWhere.params,
-  )?.c ?? 0;
+  ))?.c ?? 0;
 
-  const outstandingActions = get<{ c: number }>(
+  const outstandingActions = (await get<{ c: number }>(
     `SELECT count(*) c FROM corrective_actions ca JOIN findings f ON f.id = ca.finding_id JOIN outlets o ON o.id = f.outlet_id
      WHERE ${fWhere.sql} AND ca.status NOT IN ('closed','verified')`,
     fWhere.params,
-  )?.c ?? 0;
+  ))?.c ?? 0;
 
-  const avgScore = get<{ score: number }>(
-    `SELECT coalesce(round(avg(a.score),1),0) score FROM audits a JOIN outlets o ON o.id = a.outlet_id
+  const avgScore = (await get<{ score: number }>(
+    `SELECT coalesce(round(avg(a.score)::numeric,1),0) score FROM audits a JOIN outlets o ON o.id = a.outlet_id
      WHERE ${aWhere.sql} AND a.score IS NOT NULL AND a.status IN ('approved','closed')`,
     aWhere.params,
-  )?.score ?? 0;
+  ))?.score ?? 0;
 
-  const controls = get<{ total: number; effective: number; partial: number }>(
+  const controls = await get<{ total: number; effective: number; partial: number }>(
     `SELECT count(*) total,
        coalesce(sum(CASE WHEN effectiveness = 'effective' THEN 1 ELSE 0 END),0) effective,
        coalesce(sum(CASE WHEN effectiveness = 'partially_effective' THEN 1 ELSE 0 END),0) partial
@@ -112,7 +112,7 @@ export function dashboardData(scope: Scope, filters: ListFilters) {
     ? Math.round((((controls.effective + controls.partial * 0.5) / controls.total) * 100) * 10) / 10
     : 0;
 
-  const recentAudits = all<{
+  const recentAudits = await all<{
     id: string;
     ref: string;
     title: string;
@@ -129,7 +129,7 @@ export function dashboardData(scope: Scope, filters: ListFilters) {
     aWhere.params,
   );
 
-  const criticalFindings = all<{
+  const criticalFindings = await all<{
     id: string;
     ref: string;
     title: string;
@@ -146,7 +146,7 @@ export function dashboardData(scope: Scope, filters: ListFilters) {
     fWhere.params,
   );
 
-  const topRiskOutlets = all<{
+  const topRiskOutlets = await all<{
     id: string;
     name: string;
     code: string;
@@ -167,17 +167,17 @@ export function dashboardData(scope: Scope, filters: ListFilters) {
   );
 
   const months = monthsBack(12);
-  const monthlyAudits = all<{ month: string; audits: number; score: number }>(
-    `SELECT strftime('%Y-%m', a.completed_at) month, count(*) audits, round(avg(a.score),1) score
+  const monthlyAudits = await all<{ month: string; audits: number; score: number }>(
+    `SELECT substr(a.completed_at,1,7) AS month, count(*) audits, round(avg(a.score)::numeric,1) score
      FROM audits a JOIN outlets o ON o.id = a.outlet_id
      WHERE ${scopeSql.sql} AND a.status IN ('approved','closed') AND a.completed_at >= ?
-     GROUP BY month`,
+     GROUP BY 1`,
     [...scopeSql.params, months[0]!.start.toISOString()],
   );
-  const monthlyFindings = all<{ month: string; findings: number; amount: number }>(
-    `SELECT strftime('%Y-%m', f.created_at) month, count(*) findings, coalesce(sum(f.financial_impact_kobo),0) amount
+  const monthlyFindings = await all<{ month: string; findings: number; amount: number }>(
+    `SELECT substr(f.created_at,1,7) AS month, count(*) findings, coalesce(sum(f.financial_impact_kobo),0) amount
      FROM findings f JOIN outlets o ON o.id = f.outlet_id
-     WHERE ${scopeSql.sql} AND f.created_at >= ? GROUP BY month`,
+     WHERE ${scopeSql.sql} AND f.created_at >= ? GROUP BY 1`,
     [...scopeSql.params, months[0]!.start.toISOString()],
   );
   const findingsByMonth = new Map(monthlyFindings.map((m) => [m.month, m]));
@@ -194,15 +194,15 @@ export function dashboardData(scope: Scope, filters: ListFilters) {
     amount: Math.round((findingsByMonth.get(m.key)?.amount ?? 0) / 100),
   }));
 
-  const regionRows = all<{ name: string; score: number; audits: number }>(
-    `SELECT r.name, round(avg(a.score),1) score, count(*) audits
+  const regionRows = await all<{ name: string; score: number; audits: number }>(
+    `SELECT r.name, round(avg(a.score)::numeric,1) score, count(*) audits
      FROM audits a JOIN outlets o ON o.id = a.outlet_id JOIN regions r ON r.id = o.region_id
      WHERE ${aWhere.sql} AND a.score IS NOT NULL AND a.status IN ('approved','closed')
      GROUP BY r.id ORDER BY score DESC`,
     aWhere.params,
   );
 
-  const severityRows = all<{ name: string; value: number }>(
+  const severityRows = await all<{ name: string; value: number }>(
     `SELECT f.severity name, count(*) value FROM findings f JOIN outlets o ON o.id = f.outlet_id
      WHERE ${fWhere.sql} AND f.status NOT IN ('resolved','rejected') GROUP BY f.severity`,
     fWhere.params,
@@ -220,19 +220,19 @@ export function dashboardData(scope: Scope, filters: ListFilters) {
     color: severityColor[name]!,
   }));
 
-  const categories = all<{ name: string; value: number }>(
+  const categories = await all<{ name: string; value: number }>(
     `SELECT f.category name, count(*) value FROM findings f JOIN outlets o ON o.id = f.outlet_id
      WHERE ${fWhere.sql} AND f.status NOT IN ('resolved','rejected') GROUP BY f.category ORDER BY value DESC LIMIT 8`,
     fWhere.params,
   );
 
-  const repeated = all<{ name: string; value: number }>(
+  const repeated = await all<{ name: string; value: number }>(
     `SELECT f.category name, count(*) value FROM findings f JOIN outlets o ON o.id = f.outlet_id
      WHERE ${fWhere.sql} AND f.is_repeated = 1 GROUP BY f.category ORDER BY value DESC LIMIT 6`,
     fWhere.params,
   );
 
-  const actionRows = all<{ status: string; value: number }>(
+  const actionRows = await all<{ status: string; value: number }>(
     `SELECT ca.status, count(*) value FROM corrective_actions ca JOIN findings f ON f.id = ca.finding_id JOIN outlets o ON o.id = f.outlet_id
      WHERE ${fWhere.sql} GROUP BY ca.status`,
     fWhere.params,
@@ -244,7 +244,7 @@ export function dashboardData(scope: Scope, filters: ListFilters) {
     { name: "Closed", value: (actionRows.find((r) => r.status === "closed")?.value ?? 0) + (actionRows.find((r) => r.status === "verified")?.value ?? 0), color: "#12805c" },
   ];
 
-  const escalations = all<{
+  const escalations = await all<{
     id: string;
     created_at: string;
     reason: string;
@@ -258,7 +258,7 @@ export function dashboardData(scope: Scope, filters: ListFilters) {
     scopeSql.params,
   );
 
-  const riskSettings = getSetting<{ critical: number; high: number; medium: number }>("risk");
+  const riskSettings = await getSetting<{ critical: number; high: number; medium: number }>("risk");
 
   return {
     stats: {
@@ -294,9 +294,9 @@ export function dashboardData(scope: Scope, filters: ListFilters) {
   };
 }
 
-export function riskMatrixCounts(scope: Scope) {
+export async function riskMatrixCounts(scope: Scope) {
   const scopeSql = outletScopeSql(scope, "o");
-  const rows = all<{ likelihood: number; impact: number; c: number }>(
+  const rows = await all<{ likelihood: number; impact: number; c: number }>(
     `SELECT r.likelihood, r.impact, count(*) c FROM risks r LEFT JOIN outlets o ON o.id = r.outlet_id
      WHERE (r.outlet_id IS NULL OR ${scopeSql.sql}) GROUP BY r.likelihood, r.impact`,
     scopeSql.params,

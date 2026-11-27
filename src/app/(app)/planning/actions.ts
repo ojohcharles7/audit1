@@ -32,14 +32,14 @@ function addMonths(date: Date, months: number) {
 
 export async function createAuditAction(formData: FormData) {
   const user = await requirePermission("planning.manage");
-  const scope = getScope(user);
+  const scope = await getScope(user);
   const parsed = auditSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) redirect("/planning?error=Complete+all+required+audit+fields");
   const data = parsed.data;
-  if (!canAccessOutlet(scope, data.outletId)) redirect("/planning?error=You+do+not+have+access+to+that+outlet");
-  const outlet = get<{ name: string; manager_id: string | null }>("SELECT name, manager_id FROM outlets WHERE id = ?", [data.outletId]);
-  const template = get<{ name: string; category: string }>("SELECT name, category FROM audit_templates WHERE id = ?", [data.templateId]);
-  const auditor = get<{ name: string }>("SELECT name FROM users WHERE id = ? AND role = 'auditor'", [data.auditorId]);
+  if (!(await canAccessOutlet(scope, data.outletId))) redirect("/planning?error=You+do+not+have+access+to+that+outlet");
+  const outlet = await get<{ name: string; manager_id: string | null }>("SELECT name, manager_id FROM outlets WHERE id = ?", [data.outletId]);
+  const template = await get<{ name: string; category: string }>("SELECT name, category FROM audit_templates WHERE id = ?", [data.templateId]);
+  const auditor = await get<{ name: string }>("SELECT name FROM users WHERE id = ? AND role = 'auditor'", [data.auditorId]);
   if (!outlet || !template || !auditor) redirect("/planning?error=Invalid+outlet,+template+or+auditor");
 
   const repeat = data.repeat ?? "none";
@@ -54,8 +54,8 @@ export async function createAuditAction(formData: FormData) {
     const due = new Date(date.getTime() + 7 * 86_400_000).toISOString().slice(0, 10);
     const id = newId();
     ids.push(id);
-    const ref = nextYearRef("audit", "AUD");
-    run(
+    const ref = await nextYearRef("audit", "AUD");
+    await run(
       `INSERT INTO audits (id, ref, outlet_id, template_id, audit_type, category, title, auditor_id, manager_id, planned_date, due_date, status, objectives, scope, methodology, created_by, created_at, recurrence_group)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
@@ -79,7 +79,7 @@ export async function createAuditAction(formData: FormData) {
         group,
       ],
     );
-    logActivity({
+    await logActivity({
       actorId: user.id,
       action: "audit.created",
       entityType: "audit",
@@ -87,14 +87,14 @@ export async function createAuditAction(formData: FormData) {
       summary: `Scheduled ${categoryLabel(template.category)} audit ${ref} at ${outlet.name}`,
       metadata: { ref, plannedDate, repeat },
     });
-    notifyUsers([data.auditorId], {
+    await notifyUsers([data.auditorId], {
       type: "audit",
       severity: "info",
       title: `Audit assigned — ${ref}`,
       body: `${template.name} at ${outlet.name} is scheduled for ${plannedDate}.`,
       link: `/audits/${id}`,
     });
-    notifyOutletManagers(data.outletId, {
+    await notifyOutletManagers(data.outletId, {
       type: "audit",
       severity: "info",
       title: `Audit scheduled — ${ref}`,
@@ -103,8 +103,8 @@ export async function createAuditAction(formData: FormData) {
     });
   }
 
-  const regional = notifyUserIdsForOutlet(data.outletId);
-  notifyUsers(
+  const regional = await notifyUserIdsForOutlet(data.outletId);
+  await notifyUsers(
     regional.filter((id) => id !== data.auditorId),
     {
       type: "audit",
@@ -123,19 +123,19 @@ export async function createAuditAction(formData: FormData) {
 
 export async function createRecurringScheduleAction(formData: FormData) {
   const user = await requirePermission("planning.manage");
-  const scope = getScope(user);
+  const scope = await getScope(user);
   const outletId = String(formData.get("outletId") ?? "");
   const templateId = String(formData.get("templateId") ?? "");
   const auditorId = String(formData.get("auditorId") ?? "");
   const frequency = String(formData.get("frequency") ?? "monthly");
   const nextDate = String(formData.get("nextDate") ?? "");
   if (!outletId || !templateId || !auditorId || !nextDate) redirect("/planning?error=Complete+the+schedule+form");
-  if (!canAccessOutlet(scope, outletId)) redirect("/planning?error=Access+denied");
-  run(
+  if (!(await canAccessOutlet(scope, outletId))) redirect("/planning?error=Access+denied");
+  await run(
     "INSERT INTO audit_schedules (id, outlet_id, template_id, auditor_id, frequency, next_date, occurrences, active, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
     [newId(), outletId, templateId, auditorId, frequency, nextDate, Number(formData.get("occurrences") ?? 12), 1, user.id, nowIso()],
   );
-  logActivity({
+  await logActivity({
     actorId: user.id,
     action: "audit.schedule.created",
     entityType: "audit_schedule",
@@ -148,10 +148,10 @@ export async function createRecurringScheduleAction(formData: FormData) {
 export async function cancelAuditAction(formData: FormData) {
   const user = await requirePermission("planning.manage");
   const id = String(formData.get("auditId") ?? "");
-  const audit = get<{ ref: string; status: string }>("SELECT ref, status FROM audits WHERE id = ?", [id]);
+  const audit = await get<{ ref: string; status: string }>("SELECT ref, status FROM audits WHERE id = ?", [id]);
   if (!audit || !["scheduled", "overdue"].includes(audit.status)) redirect("/planning?error=Audit+cannot+be+cancelled");
-  run("UPDATE audits SET status = 'cancelled' WHERE id = ?", [id]);
-  logActivity({
+  await run("UPDATE audits SET status = 'cancelled' WHERE id = ?", [id]);
+  await logActivity({
     actorId: user.id,
     action: "audit.cancelled",
     entityType: "audit",

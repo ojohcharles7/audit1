@@ -84,7 +84,7 @@ export function whereAudits(scope: Scope, f: Partial<ListFilters>, auditAlias = 
     params.push(f.to);
   }
   if (f.q) {
-    clauses.push(`(${auditAlias}.ref LIKE ? OR ${outletAlias}.name LIKE ? OR ${auditAlias}.title LIKE ?)`);
+    clauses.push(`(${auditAlias}.ref ILIKE ? OR ${outletAlias}.name ILIKE ? OR ${auditAlias}.title ILIKE ?)`);
     const like = `%${f.q}%`;
     params.push(like, like, like);
   }
@@ -119,7 +119,7 @@ export function whereFindings(scope: Scope, f: Partial<ListFilters>, findingAlia
   }
   if (f.status) {
     if (f.status === "overdue") {
-      clauses.push(`(${findingAlias}.status = 'overdue' OR (${findingAlias}.status NOT IN ('resolved','rejected') AND ${findingAlias}.target_date < date('now')))`);
+      clauses.push(`(${findingAlias}.status = 'overdue' OR (${findingAlias}.status NOT IN ('resolved','rejected') AND ${findingAlias}.target_date < to_char(CURRENT_DATE,'YYYY-MM-DD')))`);
     } else {
       clauses.push(`${findingAlias}.status = ?`);
       params.push(f.status);
@@ -134,7 +134,7 @@ export function whereFindings(scope: Scope, f: Partial<ListFilters>, findingAlia
     params.push(`${f.to}T23:59:59.999Z`);
   }
   if (f.q) {
-    clauses.push(`(${findingAlias}.ref LIKE ? OR ${findingAlias}.title LIKE ? OR ${outletAlias}.name LIKE ?)`);
+    clauses.push(`(${findingAlias}.ref ILIKE ? OR ${findingAlias}.title ILIKE ? OR ${outletAlias}.name ILIKE ?)`);
     const like = `%${f.q}%`;
     params.push(like, like, like);
   }

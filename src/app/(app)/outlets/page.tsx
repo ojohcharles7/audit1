@@ -16,12 +16,12 @@ export default async function OutletsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const user = await requirePermission("outlets.view");
-  const scope = getScope(user);
+  const scope = await getScope(user);
   const sp = await searchParams;
   const filters = parseFilters(sp);
   const risk = typeof sp.risk === "string" ? sp.risk : "";
-  const outlets = listOutlets(scope, { ...filters, risk });
-  const all = listOutlets(scope, {});
+  const outlets = await listOutlets(scope, { ...filters, risk });
+  const all = await listOutlets(scope, {});
   const highRisk = all.filter((outlet) => ["high", "critical"].includes(outlet.risk_rating)).length;
   const avg = all.filter((o) => o.last_audit_score != null).reduce((sum, o) => sum + (o.last_audit_score ?? 0), 0) / Math.max(1, all.filter((o) => o.last_audit_score != null).length);
   const openFindings = all.reduce((sum, outlet) => sum + (outlet.open_findings ?? 0), 0);
@@ -64,7 +64,7 @@ export default async function OutletsPage({
             <label className="label">Region</label>
             <select name="region" defaultValue={filters.region} className="select">
               <option value="">All regions</option>
-              {regions().map((region) => (
+              {(await regions()).map((region) => (
                 <option key={region.id} value={region.id}>{region.name}</option>
               ))}
             </select>
@@ -73,7 +73,7 @@ export default async function OutletsPage({
             <label className="label">State</label>
             <select name="state" defaultValue={filters.state} className="select">
               <option value="">All states</option>
-              {states().map((state) => (
+              {(await states()).map((state) => (
                 <option key={state.id} value={state.id}>{state.name}</option>
               ))}
             </select>

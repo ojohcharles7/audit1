@@ -1,3 +1,4 @@
+import Image from "next/image";
 import type { ReportSnapshot } from "@/lib/types";
 
 export function ReportView({ snapshot }: { snapshot: ReportSnapshot }) {
@@ -6,7 +7,7 @@ export function ReportView({ snapshot }: { snapshot: ReportSnapshot }) {
       <header className="border-b-2 border-[#0b1b2b] pb-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-center gap-3">
-            <span className="grid size-11 place-items-center rounded-lg bg-[#d71920] text-lg font-bold text-white">C</span>
+            <Image src="/logo.png" alt="Crunchies" width={512} height={372} className="h-11 w-auto object-contain" />
             <div><p className="text-lg font-bold tracking-tight text-slate-900">Crunchies</p><p className="text-[10px] font-medium uppercase tracking-[0.18em] text-slate-500">{snapshot.meta.department}</p></div>
           </div>
           <div className="text-right"><p className="text-[9px] font-semibold uppercase tracking-widest text-red-600">{snapshot.meta.confidentiality}</p><p className="mt-1 text-[10px] text-slate-400">{snapshot.meta.reference}</p></div>

@@ -16,11 +16,11 @@ export const metadata = { title: "Staff & auditors" };
 
 export default async function StaffPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const actor = await requirePermission("staff.view");
-  const scope = getScope(actor);
+  const scope = await getScope(actor);
   const sp = await searchParams;
   const role = typeof sp.role === "string" ? sp.role : "";
   const q = typeof sp.q === "string" ? sp.q : "";
-  const staff = all<{ id: string; name: string; email: string; role: string; title: string; status: string; last_login_at: string | null; outlet_name: string | null; region_name: string | null; audits: number }>(
+  const staff = await all<{ id: string; name: string; email: string; role: string; title: string; status: string; last_login_at: string | null; outlet_name: string | null; region_name: string | null; audits: number }>(
     `SELECT u.*, o.name outlet_name, r.name region_name, (SELECT count(*) FROM audits a WHERE a.auditor_id=u.id) audits
      FROM users u LEFT JOIN outlets o ON o.id=u.outlet_id LEFT JOIN regions r ON r.id=u.region_id
      WHERE u.deleted_at IS NULL AND (? = '' OR u.role=?) AND (? = '' OR u.name LIKE ? OR u.email LIKE ?)
@@ -52,8 +52,8 @@ export default async function StaffPage({ searchParams }: { searchParams: Promis
             <div><label className="label">Email</label><input name="email" type="email" required className="input" /></div>
             <div><label className="label">Role</label><select name="role" className="select">{ROLE_IDS.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}</select></div>
             <div><label className="label">Title</label><input name="title" className="input" /></div>
-            <div><label className="label">Outlet (outlet managers)</label><select name="outletId" className="select"><option value="">None</option>{outletsForScope(scope).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></div>
-            <div><label className="label">Region (regional managers)</label><select name="regionId" className="select"><option value="">None</option>{regions().map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
+            <div><label className="label">Outlet (outlet managers)</label><select name="outletId" className="select"><option value="">None</option>{(await outletsForScope(scope)).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></div>
+            <div><label className="label">Region (regional managers)</label><select name="regionId" className="select"><option value="">None</option>{(await regions()).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
             <div><label className="label">Initial password</label><input name="password" type="password" required minLength={8} className="input" /></div>
             <div className="sm:col-span-2"><SubmitButton className="btn-primary">Create account</SubmitButton></div>
           </form>

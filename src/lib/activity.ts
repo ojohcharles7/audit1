@@ -19,11 +19,11 @@ function hashEntry(prevHash: string | null, payload: Record<string, unknown>) {
     .digest("hex");
 }
 
-export function logActivity(input: ActivityInput) {
-  transaction((db) => {
-    const prev = db
-      .prepare("SELECT hash FROM activity_logs ORDER BY created_at DESC, rowid DESC LIMIT 1")
-      .get() as { hash: string } | undefined;
+export async function logActivity(input: ActivityInput) {
+  await transaction(async (db) => {
+    const prev = (await db
+      .prepare("SELECT hash FROM activity_logs ORDER BY seq DESC LIMIT 1")
+      .get()) as { hash: string } | undefined;
     const createdAt = nowIso();
     const payload = {
       actorId: input.actorId ?? null,
@@ -37,27 +37,29 @@ export function logActivity(input: ActivityInput) {
       createdAt,
     };
     const hash = hashEntry(prev?.hash ?? null, payload);
-    db.prepare(
-      "INSERT INTO activity_logs (id, actor_id, action, entity_type, entity_id, summary, metadata_json, ip, user_agent, prev_hash, hash, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-    ).run(
-      newId(),
-      payload.actorId,
-      payload.action,
-      payload.entityType,
-      payload.entityId,
-      payload.summary,
-      payload.metadata ? JSON.stringify(payload.metadata) : null,
-      payload.ip,
-      payload.userAgent,
-      prev?.hash ?? null,
-      hash,
-      createdAt,
-    );
+    await db
+      .prepare(
+        "INSERT INTO activity_logs (id, actor_id, action, entity_type, entity_id, summary, metadata_json, ip, user_agent, prev_hash, hash, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+      )
+      .run(
+        newId(),
+        payload.actorId,
+        payload.action,
+        payload.entityType,
+        payload.entityId,
+        payload.summary,
+        payload.metadata ? JSON.stringify(payload.metadata) : null,
+        payload.ip,
+        payload.userAgent,
+        prev?.hash ?? null,
+        hash,
+        createdAt,
+      );
   });
 }
 
-export function verifyActivityChain() {
-  const rows = all<{
+export async function verifyActivityChain() {
+  const rows = await all<{
     id: string;
     actor_id: string | null;
     action: string;
@@ -70,7 +72,7 @@ export function verifyActivityChain() {
     prev_hash: string | null;
     hash: string;
     created_at: string;
-  }>("SELECT * FROM activity_logs ORDER BY created_at ASC, rowid ASC");
+  }>("SELECT * FROM activity_logs ORDER BY seq ASC");
   let previous: string | null = null;
   for (const row of rows) {
     const payload = {
@@ -93,39 +95,43 @@ export function verifyActivityChain() {
   return { valid: true, brokenAt: null, count: rows.length };
 }
 
-export function appendFraudUpdate(input: {
+export async function appendFraudUpdate(input: {
   caseId: string;
   kind: string;
   content: string;
   authorId: string;
   occurredAt: string;
 }) {
-  return transaction((db) => {
-    const prev = db
-      .prepare("SELECT hash FROM fraud_updates WHERE case_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1")
-      .get(input.caseId) as { hash: string } | undefined;
+  return transaction(async (db) => {
+    const prev = (await db
+      .prepare(
+        "SELECT hash FROM fraud_updates WHERE case_id = ? ORDER BY seq DESC LIMIT 1",
+      )
+      .get(input.caseId)) as { hash: string } | undefined;
     const createdAt = nowIso();
     const payload = { ...input, createdAt };
     const hash = hashEntry(prev?.hash ?? null, payload);
-    db.prepare(
-      "INSERT INTO fraud_updates (id, case_id, kind, content, author_id, occurred_at, prev_hash, hash, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-    ).run(
-      newId(),
-      input.caseId,
-      input.kind,
-      input.content,
-      input.authorId,
-      input.occurredAt,
-      prev?.hash ?? null,
-      hash,
-      createdAt,
-    );
+    await db
+      .prepare(
+        "INSERT INTO fraud_updates (id, case_id, kind, content, author_id, occurred_at, prev_hash, hash, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+      )
+      .run(
+        newId(),
+        input.caseId,
+        input.kind,
+        input.content,
+        input.authorId,
+        input.occurredAt,
+        prev?.hash ?? null,
+        hash,
+        createdAt,
+      );
     return hash;
   });
 }
 
-export function verifyFraudChain(caseId: string) {
-  const rows = all<{
+export async function verifyFraudChain(caseId: string) {
+  const rows = await all<{
     id: string;
     kind: string;
     content: string;
@@ -134,7 +140,7 @@ export function verifyFraudChain(caseId: string) {
     prev_hash: string | null;
     hash: string;
     created_at: string;
-  }>("SELECT * FROM fraud_updates WHERE case_id = ? ORDER BY created_at ASC, rowid ASC", [caseId]);
+  }>("SELECT * FROM fraud_updates WHERE case_id = ? ORDER BY seq ASC", [caseId]);
   let previous: string | null = null;
   for (const row of rows) {
     const payload = {

@@ -18,12 +18,33 @@ const ALLOWED = new Set([
   "application/zip",
 ]);
 
+function isVercel() {
+  return Boolean(process.env.VERCEL);
+}
+
+let demoEvidenceReady = false;
+
 export function storageDir() {
+  if (isVercel()) return path.join("/tmp", "storage", "evidence");
   return path.join(process.cwd(), "storage", "evidence");
 }
 
+function seedDemoEvidence(dir: string) {
+  if (demoEvidenceReady) return;
+  demoEvidenceReady = true;
+  const source = path.join(process.cwd(), "deploy", "evidence");
+  if (!fs.existsSync(source)) return;
+  fs.mkdirSync(dir, { recursive: true });
+  for (const name of fs.readdirSync(source)) {
+    const target = path.join(dir, name);
+    if (!fs.existsSync(target)) fs.copyFileSync(path.join(source, name), target);
+  }
+}
+
 export function ensureStorage() {
-  fs.mkdirSync(storageDir(), { recursive: true });
+  const dir = storageDir();
+  fs.mkdirSync(dir, { recursive: true });
+  if (isVercel()) seedDemoEvidence(dir);
 }
 
 export function validateUpload(file: File) {
@@ -45,6 +66,7 @@ export async function saveUpload(file: File, userId: string) {
 }
 
 export function resolveStoredFile(stored: string) {
+  ensureStorage();
   const base = path.resolve(storageDir());
   const target = path.resolve(base, path.basename(stored));
   if (!target.startsWith(base)) return null;

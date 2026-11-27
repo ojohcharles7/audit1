@@ -15,14 +15,14 @@ export const metadata = { title: "Evidence repository" };
 
 export default async function EvidencePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requirePermission("evidence.view");
-  const scope = getScope(user);
+  const scope = await getScope(user);
   const sp = await searchParams;
   const q = typeof sp.q === "string" ? sp.q : "";
   const category = typeof sp.category === "string" ? sp.category : "";
   const scopeSql = outletScopeSql(scope, "o");
   const accessSql = scope.all ? "1=1" : `(d.outlet_id IN (SELECT o.id FROM outlets o WHERE ${scopeSql.sql}) OR d.audit_id IN (SELECT a.id FROM audits a JOIN outlets o ON o.id=a.outlet_id WHERE ${scopeSql.sql}) OR d.finding_id IN (SELECT f.id FROM findings f JOIN outlets o ON o.id=f.outlet_id WHERE ${scopeSql.sql}))`;
   const params = scope.all ? [] : [...scopeSql.params, ...scopeSql.params, ...scopeSql.params];
-  const documents = all<{ id: string; ref: string; original_name: string; category: string; mime_type: string; size_bytes: number; confidentiality: string; created_at: string; uploaded_by_name: string | null; outlet_name: string | null }>(
+  const documents = await all<{ id: string; ref: string; original_name: string; category: string; mime_type: string; size_bytes: number; confidentiality: string; created_at: string; uploaded_by_name: string | null; outlet_name: string | null }>(
     `SELECT d.id, d.ref, d.original_name, d.category, d.mime_type, d.size_bytes, d.confidentiality, d.created_at, u.name uploaded_by_name, o.name outlet_name
      FROM documents d LEFT JOIN users u ON u.id=d.uploaded_by LEFT JOIN outlets o ON o.id=d.outlet_id
      WHERE d.deleted_at IS NULL AND ${accessSql} AND (? = '' OR d.original_name LIKE ?) AND (? = '' OR d.category=?)
@@ -47,7 +47,7 @@ export default async function EvidencePage({ searchParams }: { searchParams: Pro
           <Panel title="Upload evidence" description="Files are stored outside the public web root and served through authenticated access only.">
             <form action={uploadEvidenceAction} className="space-y-2">
               <input name="file" type="file" required className="block w-full text-[11px] text-slate-500 file:mr-2 file:rounded-md file:border-0 file:bg-slate-900 file:px-2.5 file:py-1.5 file:text-[11px] file:font-semibold file:text-white" />
-              <select name="outletId" required className="select"><option value="">Select outlet</option>{outletsForScope(scope).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select>
+              <select name="outletId" required className="select"><option value="">Select outlet</option>{(await outletsForScope(scope)).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select>
               <select name="category" className="select"><option value="general">General</option><option value="audit_working_paper">Audit working paper</option><option value="photo_evidence">Photo evidence</option><option value="receipt">Receipt</option><option value="invoice">Invoice</option><option value="cctv">CCTV export reference</option><option value="financial_record">Financial record</option></select>
               <input name="description" placeholder="Description" className="input" />
               <p className="text-[10px] leading-4 text-slate-400">Permitted: images, PDF, Office, CSV, text and ZIP. Maximum 15MB.</p>

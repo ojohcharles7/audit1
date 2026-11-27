@@ -13,14 +13,14 @@ export type LoginUser = {
   deleted_at: string | null;
 };
 
-export function findUserByLogin(identifier: string) {
-  return get<LoginUser>(
-    "SELECT id, name, email, role, status, mfa_enabled, mfa_secret, password_salt, password_hash, deleted_at FROM users WHERE lower(email) = ? OR lower(email) LIKE ? ORDER BY CASE WHEN lower(email) = ? THEN 0 ELSE 1 END LIMIT 1",
+export async function findUserByLogin(identifier: string): Promise<LoginUser | undefined> {
+  return await get<LoginUser>(
+    "SELECT id, name, email, role, status, mfa_enabled, mfa_secret, password_salt, password_hash, deleted_at FROM users WHERE lower(email) = ? OR lower(email) ILIKE ? ORDER BY CASE WHEN lower(email) = ? THEN 0 ELSE 1 END LIMIT 1",
     [identifier, `${identifier}@%`, identifier],
   );
 }
 
-export function recordLogin(input: {
+export async function recordLogin(input: {
   userId: string | null;
   email: string;
   success: boolean;
@@ -28,14 +28,14 @@ export function recordLogin(input: {
   userAgent: string;
   reason?: string | null;
 }) {
-  run(
+  await run(
     "INSERT INTO login_history (id, user_id, email, success, ip, user_agent, reason, created_at) VALUES (?,?,?,?,?,?,?,?)",
     [newId(), input.userId, input.email, input.success ? 1 : 0, input.ip, input.userAgent, input.reason ?? null, nowIso()],
   );
 }
 
-export function recentLogins(userId: string, limit = 5) {
-  return all(
+export async function recentLogins(userId: string, limit = 5) {
+  return await all(
     "SELECT * FROM login_history WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
     [userId, limit],
   );

@@ -14,7 +14,7 @@ export const metadata = { title: "Audit checklists" };
 export default async function ChecklistsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requirePermission("checklists.view");
   const sp = await searchParams;
-  const templates = all<{ id: string; code: string; name: string; category: string; version: number; description: string | null; active: number; created_at: string; question_count: number; weight: number }>(
+  const templates = await all<{ id: string; code: string; name: string; category: string; version: number; description: string | null; active: number; created_at: string; question_count: number; weight: number }>(
     `SELECT t.*, count(q.id) question_count, coalesce(sum(q.weight),0) weight FROM audit_templates t LEFT JOIN checklist_questions q ON q.template_id=t.id AND q.active=1 GROUP BY t.id ORDER BY t.category`,
   );
   const totalQuestions = templates.reduce((sum, template) => sum + template.question_count, 0);

@@ -10,8 +10,8 @@ export const metadata = { title: "Outlet performance rankings" };
 
 export default async function RankingsPage() {
   const user = await requirePermission("rankings.view");
-  const scope = getScope(user);
-  const rows = outletRankings(scope);
+  const scope = await getScope(user);
+  const rows = await outletRankings(scope);
   const best = rows.slice(0, 4);
   const worst = [...rows].reverse().slice(0, 4);
   const improved = [...rows].sort((a, b) => b.improvement - a.improvement).slice(0, 4);

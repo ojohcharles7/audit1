@@ -15,12 +15,12 @@ export const metadata = { title: "Audit reports" };
 
 export default async function ReportsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requirePermission("reports.view");
-  const scope = getScope(user);
+  const scope = await getScope(user);
   const sp = await searchParams;
   const q = typeof sp.q === "string" ? sp.q : "";
   const kind = typeof sp.kind === "string" ? sp.kind : "";
-  const reports = listReports(scope, user, { q, kind });
-  const audits = approvedAuditsForReports(scope);
+  const reports = await listReports(scope, user, { q, kind });
+  const audits = await approvedAuditsForReports(scope);
   const generate = can(user, "reports.generate");
   return (
     <div>

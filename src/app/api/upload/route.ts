@@ -11,7 +11,7 @@ export async function POST(request: Request) {
   if (!(await assertOrigin(request))) return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const scope = getScope(user);
+  const scope = await getScope(user);
 
   const form = await request.formData();
   const file = form.get("file");
@@ -27,19 +27,19 @@ export async function POST(request: Request) {
   const category = String(form.get("category") ?? "general");
   const description = String(form.get("description") ?? "") || null;
 
-  if (auditId && !canAccessAudit(scope, auditId)) return NextResponse.json({ error: "Access denied" }, { status: 403 });
-  if (fraudCaseId && !canViewFraudCase(user, fraudCaseId)) return NextResponse.json({ error: "Access denied" }, { status: 403 });
-  if (outletId && !canAccessOutlet(scope, outletId)) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  if (auditId && !(await canAccessAudit(scope, auditId))) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  if (fraudCaseId && !(await canViewFraudCase(user, fraudCaseId))) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  if (outletId && !(await canAccessOutlet(scope, outletId))) return NextResponse.json({ error: "Access denied" }, { status: 403 });
   if (findingId) {
-    const finding = get<{ outlet_id: string }>("SELECT outlet_id FROM findings WHERE id=?", [findingId]);
-    if (!finding || !canAccessOutlet(scope, finding.outlet_id)) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    const finding = await get<{ outlet_id: string }>("SELECT outlet_id FROM findings WHERE id=?", [findingId]);
+    if (!finding || !(await canAccessOutlet(scope, finding.outlet_id))) return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
   if (actionId) {
-    const action = get<{ outlet_id: string }>(
+    const action = await get<{ outlet_id: string }>(
       "SELECT f.outlet_id FROM corrective_actions ca JOIN findings f ON f.id=ca.finding_id WHERE ca.id=?",
       [actionId],
     );
-    if (!action || !canAccessOutlet(scope, action.outlet_id)) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    if (!action || !(await canAccessOutlet(scope, action.outlet_id))) return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
   if (!auditId && !findingId && !fraudCaseId && !outletId && !actionId) {
     return NextResponse.json({ error: "A document must be linked to an audit, finding, case, action or outlet" }, { status: 400 });
@@ -47,9 +47,9 @@ export async function POST(request: Request) {
 
   const saved = await saveUpload(file, user.id);
   const id = newId();
-  const ref = nextYearRef("document", "DOC");
+  const ref = await nextYearRef("document", "DOC");
   const meta = await getRequestMeta();
-  run(
+  await run(
     `INSERT INTO documents (id, ref, filename, original_name, mime_type, size_bytes, sha256, storage_path, uploaded_by, outlet_id, audit_id, finding_id, fraud_case_id, action_id, category, confidentiality, description, created_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
@@ -73,11 +73,11 @@ export async function POST(request: Request) {
       nowIso(),
     ],
   );
-  run(
+  await run(
     "INSERT INTO document_access_log (id, document_id, user_id, action, ip, created_at) VALUES (?,?,?,?,?,?)",
     [newId(), id, user.id, "upload", meta.ip, nowIso()],
   );
-  logActivity({
+  await logActivity({
     actorId: user.id,
     action: "document.uploaded",
     entityType: "document",

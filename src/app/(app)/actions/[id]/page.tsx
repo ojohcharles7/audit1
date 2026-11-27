@@ -19,10 +19,10 @@ export default async function ActionDetailPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const user = await requirePermission("actions.view");
-  const scope = getScope(user);
+  const scope = await getScope(user);
   const { id } = await params;
   const sp = await searchParams;
-  const data = getAction(scope, id);
+  const data = await getAction(scope, id);
   if (!data) notFound();
   const { action, documents, findingHistory } = data;
   const overdue = isOverdue(action.due_date, action.status);

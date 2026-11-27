@@ -31,10 +31,10 @@ export default async function AuditDetailPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const user = await requirePermission("audits.view");
-  const scope = getScope(user);
+  const scope = await getScope(user);
   const { id } = await params;
   const sp = await searchParams;
-  const data = auditDetail(scope, id);
+  const data = await auditDetail(scope, id);
   if (!data) notFound();
   const { audit, questions, responses, breakdown, findings, evidence, report, logs } = data;
   const canEdit = canConductAudit(user, audit) && ["scheduled", "in_progress"].includes(audit.status);

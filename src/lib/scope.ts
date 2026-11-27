@@ -10,7 +10,7 @@ export type Scope = {
   outletIds: string[] | null;
 };
 
-export function getScope(user: SessionUser): Scope {
+export async function getScope(user: SessionUser): Promise<Scope> {
   if (user.role === "head_audit" || user.role === "audit_manager" || user.role === "finance" || user.role === "executive") {
     return { userId: user.id, role: user.role, all: true, regionId: null, outletId: null, outletIds: null };
   }
@@ -34,7 +34,7 @@ export function getScope(user: SessionUser): Scope {
       outletIds: user.outlet_id ? [user.outlet_id] : [],
     };
   }
-  const rows = all<{ outlet_id: string }>(
+  const rows = await all<{ outlet_id: string }>(
     "SELECT DISTINCT outlet_id FROM audits WHERE auditor_id = ? UNION SELECT DISTINCT outlet_id FROM findings WHERE created_by = ?",
     [user.id, user.id],
   );
@@ -72,18 +72,18 @@ export function outletIdScopeSql(scope: Scope, outletColumn = "outlet_id") {
   return { sql: `${outletColumn} IN (${ids.map(() => "?").join(",")})`, params: ids };
 }
 
-export function canAccessOutlet(scope: Scope, outletId: string) {
+export async function canAccessOutlet(scope: Scope, outletId: string) {
   if (scope.all) return true;
   if (scope.regionId) {
-    return Boolean(get("SELECT 1 FROM outlets WHERE id = ? AND region_id = ?", [outletId, scope.regionId]));
+    return Boolean(await get("SELECT 1 FROM outlets WHERE id = ? AND region_id = ?", [outletId, scope.regionId]));
   }
   return (scope.outletIds ?? []).includes(outletId);
 }
 
-export function canAccessAudit(scope: Scope, auditId: string) {
+export async function canAccessAudit(scope: Scope, auditId: string) {
   if (scope.all) return true;
-  const row = get<{ outlet_id: string }>("SELECT outlet_id FROM audits WHERE id = ?", [auditId]);
-  return row ? canAccessOutlet(scope, row.outlet_id) : false;
+  const row = await get<{ outlet_id: string }>("SELECT outlet_id FROM audits WHERE id = ?", [auditId]);
+  return row ? await canAccessOutlet(scope, row.outlet_id) : false;
 }
 
 export function canConductAudit(user: SessionUser, audit: { auditor_id: string; outlet_id: string; manager_id: string | null; created_by: string | null }) {
@@ -93,20 +93,20 @@ export function canConductAudit(user: SessionUser, audit: { auditor_id: string; 
   return false;
 }
 
-export function canViewFraudCase(user: SessionUser, caseId: string) {
+export async function canViewFraudCase(user: SessionUser, caseId: string) {
   if (user.role === "head_audit" || user.role === "audit_manager") return true;
-  const row = get<{ officer_id: string; created_by: string }>(
+  const row = await get<{ officer_id: string; created_by: string }>(
     "SELECT officer_id, created_by FROM fraud_cases WHERE id = ?",
     [caseId],
   );
   if (!row) return false;
   if (row.officer_id === user.id || row.created_by === user.id) return true;
   return Boolean(
-    get("SELECT 1 FROM case_access WHERE case_id = ? AND user_id = ?", [caseId, user.id]),
+    await get("SELECT 1 FROM case_access WHERE case_id = ? AND user_id = ?", [caseId, user.id]),
   );
 }
 
-export function canUpdateFraudCase(user: SessionUser, caseId: string) {
+export async function canUpdateFraudCase(user: SessionUser, caseId: string) {
   if (user.role === "head_audit" || user.role === "audit_manager") return true;
-  return canViewFraudCase(user, caseId) && user.role === "auditor";
+  return (await canViewFraudCase(user, caseId)) && user.role === "auditor";
 }

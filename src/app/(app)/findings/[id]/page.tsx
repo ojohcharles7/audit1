@@ -28,13 +28,13 @@ export default async function FindingDetailPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const user = await requirePermission("findings.view");
-  const scope = getScope(user);
+  const scope = await getScope(user);
   const { id } = await params;
   const sp = await searchParams;
-  const data = getFinding(scope, id);
+  const data = await getFinding(scope, id);
   if (!data) notFound();
   const { finding, actions, history, evidence, escalations, sourceQuestion } = data;
-  const staff = staffList();
+  const staff = await staffList();
   const overdue = isOverdue(finding.target_date, finding.status) && !["resolved", "rejected"].includes(finding.status);
   const allActionsDone = actions.length > 0 && actions.every((action) => ["verified", "closed"].includes(action.status));
   const canRespond = can(user, "findings.respond") && !["resolved", "rejected"].includes(finding.status);

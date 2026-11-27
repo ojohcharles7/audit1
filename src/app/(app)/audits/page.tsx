@@ -17,11 +17,11 @@ export default async function AuditsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const user = await requirePermission("audits.view");
-  const scope = getScope(user);
+  const scope = await getScope(user);
   const sp = await searchParams;
   const filters = parseFilters(sp);
-  const audits = listAudits(scope, filters);
-  const stats = auditStats(scope);
+  const audits = await listAudits(scope, filters);
+  const stats = await auditStats(scope);
   const created = sp.created === "1";
 
   return (
@@ -67,28 +67,28 @@ export default async function AuditsPage({
             <label className="label">Region</label>
             <select name="region" defaultValue={filters.region} className="select">
               <option value="">All regions</option>
-              {regions().map((region) => <option key={region.id} value={region.id}>{region.name}</option>)}
+              {(await regions()).map((region) => <option key={region.id} value={region.id}>{region.name}</option>)}
             </select>
           </div>
           <div className="min-w-36">
             <label className="label">State</label>
             <select name="state" defaultValue={filters.state} className="select">
               <option value="">All states</option>
-              {states().map((state) => <option key={state.id} value={state.id}>{state.name}</option>)}
+              {(await states()).map((state) => <option key={state.id} value={state.id}>{state.name}</option>)}
             </select>
           </div>
           <div className="min-w-40">
             <label className="label">Outlet</label>
             <select name="outlet" defaultValue={filters.outlet} className="select">
               <option value="">All outlets</option>
-              {outletsForScope(scope).map((outlet) => <option key={outlet.id} value={outlet.id}>{outlet.name}</option>)}
+              {(await outletsForScope(scope)).map((outlet) => <option key={outlet.id} value={outlet.id}>{outlet.name}</option>)}
             </select>
           </div>
           <div className="min-w-36">
             <label className="label">Auditor</label>
             <select name="auditor" defaultValue={filters.auditor} className="select">
               <option value="">All auditors</option>
-              {auditors().map((auditor) => <option key={auditor.id} value={auditor.id}>{auditor.name}</option>)}
+              {(await auditors()).map((auditor) => <option key={auditor.id} value={auditor.id}>{auditor.name}</option>)}
             </select>
           </div>
           <div className="min-w-36">

@@ -1,15 +1,22 @@
-import path from "node:path";
-import { createDb } from "./index";
+import fs from "node:fs";
+import { closeDb, transaction } from "./index";
 import { seedDatabase } from "./seed-data";
 
-const configured = process.env.DATABASE_PATH || ".data/audit.db";
-const file = path.isAbsolute(configured) ? configured : path.join(process.cwd(), configured);
-const db = createDb(file);
+const envFile = [".env.local", ".env"].find((file) => fs.existsSync(file));
+if (envFile) process.loadEnvFile(envFile);
 
-console.log(`Seeding ${file} ...`);
-const started = Date.now();
-const result = seedDatabase(db);
-db.close();
-console.log(`Seeded in ${Date.now() - started}ms`);
-console.log(result);
-console.log("Demo password: Audit@2026");
+async function main() {
+  console.log("Seeding Supabase Postgres ...");
+  const started = Date.now();
+  const result = await transaction((db) => seedDatabase(db));
+  console.log(`Seeded in ${Date.now() - started}ms`);
+  console.log(result);
+  console.log("Demo password: Audit@2026");
+  await closeDb();
+}
+
+main().catch(async (error) => {
+  console.error(error);
+  try { await closeDb(); } catch {}
+  process.exit(1);
+});

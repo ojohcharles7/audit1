@@ -12,10 +12,10 @@ import { approveReportAction } from "../actions";
 
 export default async function ReportDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requirePermission("reports.view");
-  const scope = getScope(user);
+  const scope = await getScope(user);
   const { id } = await params;
   const sp = await searchParams;
-  const report = reportRecord(user, scope, id);
+  const report = await reportRecord(user, scope, id);
   if (!report) notFound();
   return (
     <div>

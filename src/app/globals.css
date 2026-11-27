@@ -55,10 +55,13 @@ body {
 
 @layer components {
   .card {
-    @apply rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)];
+    @apply min-w-0 rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)];
   }
   .card-pad {
     @apply p-4 sm:p-5;
+  }
+  main :is(.grid, .flex) > * {
+    min-width: 0;
   }
   .section-title {
     @apply text-sm font-semibold tracking-tight text-slate-900;
@@ -90,7 +93,7 @@ body {
   .input,
   .select,
   .textarea {
-    @apply w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200;
+    @apply w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200;
   }
   .textarea {
     @apply min-h-24 resize-y;

@@ -16,17 +16,17 @@ export default async function FraudDetailPage({ params, searchParams }: { params
   const user = await requirePermission("fraud.view");
   const { id } = await params;
   const sp = await searchParams;
-  if (!canViewFraudCase(user, id)) notFound();
-  const fraud = get<{ id: string; ref: string; title: string; type: string; description: string; suspected_exposure_kobo: number; incident_date: string; location: string | null; witnesses: string | null; status: string; conclusion: string | null; opened_at: string; closed_at: string | null; officer_name: string; outlet_name: string | null; creator_name: string | null; approver_name: string | null }>(
+  if (!(await canViewFraudCase(user, id))) notFound();
+  const fraud = await get<{ id: string; ref: string; title: string; type: string; description: string; suspected_exposure_kobo: number; incident_date: string; location: string | null; witnesses: string | null; status: string; conclusion: string | null; opened_at: string; closed_at: string | null; officer_name: string; outlet_name: string | null; creator_name: string | null; approver_name: string | null }>(
     `SELECT fc.*, u.name officer_name, o.name outlet_name, c.name creator_name, a.name approver_name FROM fraud_cases fc JOIN users u ON u.id=fc.officer_id LEFT JOIN outlets o ON o.id=fc.outlet_id LEFT JOIN users c ON c.id=fc.created_by LEFT JOIN users a ON a.id=fc.closure_approved_by WHERE fc.id=?`, [id]);
   if (!fraud) notFound();
-  const updates = all<{ id: string; kind: string; content: string; occurred_at: string; author_name: string; hash: string }>(
+  const updates = await all<{ id: string; kind: string; content: string; occurred_at: string; author_name: string; hash: string }>(
     `SELECT fu.*, u.name author_name FROM fraud_updates fu LEFT JOIN users u ON u.id=fu.author_id WHERE fu.case_id=? ORDER BY fu.created_at DESC`, [id]);
-  const documents = all<{ id: string; ref: string; original_name: string; uploaded_by_name: string | null; created_at: string }>(
+  const documents = await all<{ id: string; ref: string; original_name: string; uploaded_by_name: string | null; created_at: string }>(
     `SELECT d.id, d.ref, d.original_name, u.name uploaded_by_name, d.created_at FROM documents d LEFT JOIN users u ON u.id=d.uploaded_by WHERE d.fraud_case_id=? AND d.deleted_at IS NULL ORDER BY d.created_at DESC`, [id]);
-  const accessList = all<{ name: string; email: string; granted_at: string; granted_by_name: string | null }>(
+  const accessList = await all<{ name: string; email: string; granted_at: string; granted_by_name: string | null }>(
     `SELECT u.name, u.email, ca.granted_at, g.name granted_by_name FROM case_access ca JOIN users u ON u.id=ca.user_id LEFT JOIN users g ON g.id=ca.granted_by WHERE ca.case_id=?`, [id]);
-  const chain = verifyFraudChain(id);
+  const chain = await verifyFraudChain(id);
   const manager = can(user, "fraud.manage");
   const investigator = can(user, "fraud.investigate");
   return (

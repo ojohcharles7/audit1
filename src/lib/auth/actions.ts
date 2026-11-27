@@ -54,22 +54,22 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
     return { error: "Too many attempts. Please wait 10 minutes and try again." };
   }
 
-  const user = findUserByLogin(identifier);
+  const user = await findUserByLogin(identifier);
   if (!user) {
-    recordLogin({ userId: null, email: identifier, success: false, ip, userAgent, reason: "Unknown account" });
+    await recordLogin({ userId: null, email: identifier, success: false, ip, userAgent, reason: "Unknown account" });
     recordAttempt(key);
     return { error: "Invalid credentials or account is inactive." };
   }
 
   if (user.status !== "active" || user.deleted_at) {
-    recordLogin({ userId: user.id, email: identifier, success: false, ip, userAgent, reason: "Inactive account" });
+    await recordLogin({ userId: user.id, email: identifier, success: false, ip, userAgent, reason: "Inactive account" });
     recordAttempt(key);
     return { error: "Invalid credentials or account is inactive." };
   }
 
   if (!verifyPassword(password, user.password_salt, user.password_hash)) {
-    recordLogin({ userId: user.id, email: identifier, success: false, ip, userAgent, reason: "Invalid password" });
-    logActivity({
+    await recordLogin({ userId: user.id, email: identifier, success: false, ip, userAgent, reason: "Invalid password" });
+    await logActivity({
       actorId: user.id,
       action: "login.failed",
       entityType: "session",
@@ -86,7 +86,7 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
     const { verify } = await import("otplib");
     const result = await verify({ secret: user.mfa_secret, token: code });
     if (!result.valid) {
-      recordLogin({ userId: user.id, email: identifier, success: false, ip, userAgent, reason: "Invalid MFA code" });
+      await recordLogin({ userId: user.id, email: identifier, success: false, ip, userAgent, reason: "Invalid MFA code" });
       recordAttempt(key);
       return { error: "Invalid authenticator code." };
     }
@@ -101,13 +101,13 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
     name: user.name,
   });
   const expiresAt = new Date(Date.now() + SESSION_MAX_AGE_SECONDS * 1000).toISOString();
-  run(
+  await run(
     "INSERT INTO sessions (id, user_id, token_id, ip, user_agent, created_at, last_seen_at, expires_at) VALUES (?,?,?,?,?,?,?,?)",
     [newId(), user.id, sid, ip, userAgent, nowIso(), nowIso(), expiresAt],
   );
-  run("UPDATE users SET last_login_at = ? WHERE id = ?", [nowIso(), user.id]);
-  recordLogin({ userId: user.id, email: identifier, success: true, ip, userAgent });
-  logActivity({
+  await run("UPDATE users SET last_login_at = ? WHERE id = ?", [nowIso(), user.id]);
+  await recordLogin({ userId: user.id, email: identifier, success: true, ip, userAgent });
+  await logActivity({
     actorId: user.id,
     action: "login.success",
     entityType: "session",
@@ -133,8 +133,8 @@ export async function logoutAction() {
   const store = await cookies();
   const payload = await decodeSessionToken(store.get(SESSION_COOKIE)?.value);
   if (payload) {
-    run("UPDATE sessions SET revoked_at = ? WHERE token_id = ?", [nowIso(), payload.sid]);
-    logActivity({
+    await run("UPDATE sessions SET revoked_at = ? WHERE token_id = ?", [nowIso(), payload.sid]);
+    await logActivity({
       actorId: payload.uid,
       action: "logout",
       entityType: "session",

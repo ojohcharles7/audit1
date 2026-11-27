@@ -13,7 +13,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     items: group.items.filter((item) => permissions.has(item.permission)),
   })).filter((group) => group.items.length > 0);
 
-  const unread = get<{ count: number }>(
+  const unread = await get<{ count: number }>(
     "SELECT count(*) as count FROM notifications WHERE user_id = ? AND read_at IS NULL",
     [user.id],
   );

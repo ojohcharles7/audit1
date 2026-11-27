@@ -1,5 +1,5 @@
 const CACHE = "crunchies-audit-v1";
-const PRECACHE = ["/offline", "/icon.svg", "/manifest.webmanifest"];
+const PRECACHE = ["/offline", "/icon-192.png", "/icon-512.png", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

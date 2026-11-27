@@ -17,7 +17,7 @@ export default async function ControlsPage({ searchParams }: { searchParams: Pro
   const sp = await searchParams;
   const department = typeof sp.department === "string" ? sp.department : "";
   const effectiveness = typeof sp.effectiveness === "string" ? sp.effectiveness : "";
-  const controls = all<{ id: string; control_ref: string; name: string; description: string; department: string; frequency: string; effectiveness: string; last_tested_at: string | null; next_test_at: string | null; owner_name: string | null; test_count: number; exceptions: number }>(
+  const controls = await all<{ id: string; control_ref: string; name: string; description: string; department: string; frequency: string; effectiveness: string; last_tested_at: string | null; next_test_at: string | null; owner_name: string | null; test_count: number; exceptions: number }>(
     `SELECT c.*, u.name owner_name, (SELECT count(*) FROM control_tests t WHERE t.control_id=c.id) test_count, (SELECT coalesce(sum(exceptions),0) FROM control_tests t WHERE t.control_id=c.id) exceptions FROM controls c LEFT JOIN users u ON u.id=c.owner_id WHERE (? = '' OR c.department=?) AND (? = '' OR c.effectiveness=?) ORDER BY c.department, c.name`,
     [department, department, effectiveness, effectiveness],
   );
@@ -47,7 +47,7 @@ export default async function ControlsPage({ searchParams }: { searchParams: Pro
             <div><label className="label">Department</label><select name="department" className="select">{DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}</select></div>
             <div className="sm:col-span-2"><label className="label">Description</label><textarea name="description" required className="textarea" /></div>
             <div><label className="label">Control objective</label><input name="objective" className="input" /></div>
-            <div><label className="label">Owner</label><select name="ownerId" className="select"><option value="">Unassigned</option>{staffList().map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+            <div><label className="label">Owner</label><select name="ownerId" className="select"><option value="">Unassigned</option>{(await staffList()).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
             <div><label className="label">Frequency</label><select name="frequency" className="select">{CONTROL_FREQUENCIES.map((f) => <option key={f} value={f}>{f}</option>)}</select></div>
             <div><label className="label">Next test date</label><input name="nextTest" type="date" className="input" /></div>
             <div><label className="label">Test procedure</label><input name="testProcedure" className="input" /></div>

@@ -28,7 +28,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   const payload = await decodeSessionToken(store.get(SESSION_COOKIE)?.value);
   if (!payload) return null;
 
-  const user = get<UserRow>(
+  const user = await get<UserRow>(
     "SELECT u.id, u.name, u.email, u.role, u.title, u.initials, u.outlet_id, u.region_id, u.mfa_enabled, u.status " +
       "FROM users u JOIN sessions s ON s.user_id = u.id " +
       "WHERE u.id = ? AND s.token_id = ? AND s.revoked_at IS NULL AND s.expires_at > ? AND u.deleted_at IS NULL AND u.status = 'active'",
@@ -36,7 +36,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   );
 
   if (!user) return null;
-  run("UPDATE sessions SET last_seen_at = ? WHERE token_id = ?", [
+  await run("UPDATE sessions SET last_seen_at = ? WHERE token_id = ?", [
     new Date().toISOString(),
     payload.sid,
   ]);

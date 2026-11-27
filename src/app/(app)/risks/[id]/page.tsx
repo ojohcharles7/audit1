@@ -14,7 +14,7 @@ export default async function RiskDetailPage({ params, searchParams }: { params:
   const user = await requirePermission("risks.view");
   const { id } = await params;
   const sp = await searchParams;
-  const risk = get<{ id: string; ref: string; title: string; category: string; description: string; cause: string | null; likelihood: number; impact: number; inherent_score: number; existing_controls: string | null; control_effectiveness: string; residual_score: number; rating: string; mitigation: string | null; review_date: string | null; status: string; owner_name: string | null; outlet_name: string | null }>(
+  const risk = await get<{ id: string; ref: string; title: string; category: string; description: string; cause: string | null; likelihood: number; impact: number; inherent_score: number; existing_controls: string | null; control_effectiveness: string; residual_score: number; rating: string; mitigation: string | null; review_date: string | null; status: string; owner_name: string | null; outlet_name: string | null }>(
     `SELECT r.*, u.name owner_name, o.name outlet_name FROM risks r LEFT JOIN users u ON u.id=r.owner_id LEFT JOIN outlets o ON o.id=r.outlet_id WHERE r.id=?`, [id]);
   if (!risk) notFound();
   const manual = can(user, "risks.manage");

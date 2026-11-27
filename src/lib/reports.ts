@@ -28,8 +28,8 @@ export const REPORT_KINDS = [
 
 export type ReportKind = (typeof REPORT_KINDS)[number]["id"];
 
-function metaFor(title: string, subtitle: string, period: string, preparedBy: string, reference = "Management report") {
-  const org = getSetting<{ name: string; department: string }>("org");
+async function metaFor(title: string, subtitle: string, period: string, preparedBy: string, reference = "Management report") {
+  const org = await getSetting<{ name: string; department: string }>("org");
   return {
     org: org.name,
     department: org.department,
@@ -43,8 +43,8 @@ function metaFor(title: string, subtitle: string, period: string, preparedBy: st
   };
 }
 
-export function buildAuditSnapshot(auditId: string): ReportSnapshot | null {
-  const audit = get<{
+export async function buildAuditSnapshot(auditId: string): Promise<ReportSnapshot | null> {
+  const audit = await get<{
     ref: string;
     title: string;
     status: string;
@@ -72,7 +72,7 @@ export function buildAuditSnapshot(auditId: string): ReportSnapshot | null {
     [auditId],
   );
   if (!audit) return null;
-  const findings = all<{
+  const findings = await all<{
     ref: string;
     title: string;
     description: string;
@@ -83,21 +83,21 @@ export function buildAuditSnapshot(auditId: string): ReportSnapshot | null {
     management_response: string | null;
     target_date: string | null;
   }>("SELECT * FROM findings WHERE audit_id=? AND deleted_at IS NULL ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END", [auditId]);
-  const categoryScores = all<{ category: string; weight: number; earned: number }>(
+  const categoryScores = await all<{ category: string; weight: number; earned: number }>(
     `SELECT q.category, sum(q.weight) weight,
        sum(CASE r.result WHEN 'compliant' THEN q.weight WHEN 'yes' THEN q.weight WHEN 'partial' THEN q.weight * 0.5 ELSE 0 END) earned
      FROM audit_responses r JOIN checklist_questions q ON q.id=r.question_id
      WHERE r.audit_id=? AND r.result NOT IN ('na') GROUP BY q.category`,
     [auditId],
   );
-  const actions = all<{ ref: string; description: string; officer_name: string; due_date: string; progress: number; status: string }>(
+  const actions = await all<{ ref: string; description: string; officer_name: string; due_date: string; progress: number; status: string }>(
     `SELECT ca.ref, ca.description, u.name officer_name, ca.due_date, ca.progress, ca.status
      FROM corrective_actions ca JOIN findings f ON f.id=ca.finding_id JOIN users u ON u.id=ca.officer_id WHERE f.audit_id=?`,
     [auditId],
   );
   const exposure = findings.reduce((sum, finding) => sum + finding.financial_impact_kobo, 0);
   const snapshot: ReportSnapshot = {
-    meta: metaFor(
+    meta: await metaFor(
       `Internal Audit Report — ${audit.outlet_name}`,
       audit.ref,
       `${formatDate(audit.planned_date)} to ${formatDate(audit.completed_at)}`,
@@ -196,15 +196,15 @@ export function buildAuditSnapshot(auditId: string): ReportSnapshot | null {
   return snapshot;
 }
 
-export function buildManagementSnapshot(
+export async function buildManagementSnapshot(
   kind: Exclude<ReportKind, "audit">,
   scope: Scope,
   user: SessionUser,
   from: string,
   to: string,
-): ReportSnapshot {
+): Promise<ReportSnapshot> {
   const scopeSql = outletScopeSql(scope, "o");
-  const auditRows = all<{
+  const auditRows = await all<{
     id: string;
     ref: string;
     title: string;
@@ -221,7 +221,7 @@ export function buildManagementSnapshot(
      WHERE ${scopeSql.sql} AND a.planned_date BETWEEN ? AND ? ORDER BY a.planned_date DESC`,
     [...scopeSql.params, from, to],
   );
-  const findingRows = all<{
+  const findingRows = await all<{
     ref: string;
     title: string;
     severity: string;
@@ -237,7 +237,7 @@ export function buildManagementSnapshot(
      WHERE ${scopeSql.sql} AND f.created_at BETWEEN ? AND ? AND f.deleted_at IS NULL ORDER BY CASE f.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END`,
     [...scopeSql.params, `${from}T00:00:00.000Z`, `${to}T23:59:59.999Z`],
   );
-  const actionRows = all<{
+  const actionRows = await all<{
     ref: string;
     description: string;
     status: string;
@@ -251,7 +251,7 @@ export function buildManagementSnapshot(
      WHERE ${scopeSql.sql} AND f.created_at BETWEEN ? AND ? ORDER BY ca.due_date`,
     [...scopeSql.params, `${from}T00:00:00.000Z`, `${to}T23:59:59.999Z`],
   );
-  const riskRows = all<{
+  const riskRows = await all<{
     ref: string;
     title: string;
     category: string;
@@ -267,7 +267,7 @@ export function buildManagementSnapshot(
      WHERE (r.outlet_id IS NULL OR ${scopeSql.sql}) ORDER BY r.residual_score DESC`,
     scopeSql.params,
   );
-  const controlRows = all<{
+  const controlRows = await all<{
     control_ref: string;
     name: string;
     department: string;
@@ -285,7 +285,7 @@ export function buildManagementSnapshot(
         ? `fc.outlet_id IN (${scope.outletIds.map(() => "?").join(",")})`
         : "1=0";
   const fraudParams = scope.all ? [] : scope.regionId ? [scope.regionId] : scope.outletIds ?? [];
-  const fraudSummary = get<{ total: number; open: number; exposure: number }>(
+  const fraudSummary = await get<{ total: number; open: number; exposure: number }>(
     `SELECT count(*) total,
        coalesce(sum(CASE WHEN fc.status NOT IN ('closed','referred') THEN 1 ELSE 0 END),0) open,
        coalesce(sum(fc.suspected_exposure_kobo),0) exposure
@@ -298,7 +298,7 @@ export function buildManagementSnapshot(
   const exposure = openFindings.reduce((sum, f) => sum + f.financial_impact_kobo, 0);
   const canSeeFraud = user.role === "head_audit" || user.role === "audit_manager" || user.role === "auditor";
   const title = REPORT_KINDS.find((item) => item.id === kind)?.label ?? "Management Report";
-  const org = getSetting<{ name: string; department: string }>("org");
+  const org = await getSetting<{ name: string; department: string }>("org");
   const baseSummary = [
     { label: "Audits in period", value: String(auditRows.length) },
     { label: "Completed audits", value: String(completed.length) },
@@ -398,8 +398,8 @@ export function buildManagementSnapshot(
   }
 
   if (kind === "outlet_performance" || kind === "regional_performance") {
-    const groups = all<{ name: string; score: number; audits: number }>(
-      `SELECT ${kind === "regional_performance" ? "r.name" : "o.name"} name, round(avg(a.score),1) score, count(*) audits
+    const groups = await all<{ name: string; score: number; audits: number }>(
+      `SELECT ${kind === "regional_performance" ? "r.name" : "o.name"} name, round(avg(a.score)::numeric,1) score, count(*) audits
        FROM audits a JOIN outlets o ON o.id=a.outlet_id JOIN regions r ON r.id=o.region_id
        WHERE ${scopeSql.sql} AND a.status IN ('approved','closed') AND a.planned_date BETWEEN ? AND ?
        GROUP BY 1 ORDER BY score DESC`,
@@ -413,8 +413,8 @@ export function buildManagementSnapshot(
   }
 
   if (kind === "auditor_productivity") {
-    const productivity = all<{ name: string; audits: number; avg_score: number; findings: number }>(
-      `SELECT u.name, count(DISTINCT a.id) audits, round(avg(a.score),1) avg_score,
+    const productivity = await all<{ name: string; audits: number; avg_score: number; findings: number }>(
+      `SELECT u.name, count(DISTINCT a.id) audits, round(avg(a.score)::numeric,1) avg_score,
         (SELECT count(*) FROM findings f WHERE f.created_by=u.id) findings
        FROM users u LEFT JOIN audits a ON a.auditor_id=u.id AND a.planned_date BETWEEN ? AND ?
        WHERE u.role='auditor' AND u.deleted_at IS NULL GROUP BY u.id ORDER BY audits DESC`,
@@ -428,7 +428,7 @@ export function buildManagementSnapshot(
   }
 
   return {
-    meta: metaFor(
+    meta: await metaFor(
       `${title} — ${org.name}`,
       `${outletScopeLabel(scope)} assurance summary`,
       `${formatDate(from)} to ${formatDate(to)}`,
@@ -449,7 +449,7 @@ function outletScopeLabel(scope: Scope) {
   return "Outlet";
 }
 
-export function createReportRecord(input: {
+export async function createReportRecord(input: {
   user: SessionUser;
   scope: Scope;
   kind: ReportKind;
@@ -459,19 +459,19 @@ export function createReportRecord(input: {
 }) {
   const snapshot =
     input.kind === "audit" && input.auditId
-      ? buildAuditSnapshot(input.auditId)
+      ? await buildAuditSnapshot(input.auditId)
       : input.kind === "audit"
         ? null
-        : buildManagementSnapshot(input.kind as Exclude<ReportKind, "audit">, input.scope, input.user, input.from, input.to);
+        : await buildManagementSnapshot(input.kind as Exclude<ReportKind, "audit">, input.scope, input.user, input.from, input.to);
   if (!snapshot) return null;
   const id = newId();
-  const ref = nextYearRef("report", "RPT");
+  const ref = await nextYearRef("report", "RPT");
   const auditId = input.kind === "audit" ? input.auditId ?? null : null;
   const previousVersion = auditId
-    ? get<{ v: number }>("SELECT coalesce(max(version),0) v FROM audit_reports WHERE audit_id=?", [auditId])?.v ?? 0
+    ? (await get<{ v: number }>("SELECT coalesce(max(version),0) v FROM audit_reports WHERE audit_id=?", [auditId]))?.v ?? 0
     : 0;
   const version = previousVersion + 1;
-  run(
+  await run(
     "INSERT INTO audit_reports (id, report_ref, audit_id, kind, title, period_start, period_end, version, status, confidentiality, snapshot_json, generated_by, generated_at, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
     [
       id,
@@ -490,7 +490,7 @@ export function createReportRecord(input: {
       nowIso(),
     ],
   );
-  logActivity({
+  await logActivity({
     actorId: input.user.id,
     action: "report.generated",
     entityType: "audit_report",
@@ -501,7 +501,7 @@ export function createReportRecord(input: {
   return { id, ref };
 }
 
-export function listReports(
+export async function listReports(
   scope: Scope,
   user: SessionUser,
   filters: { q?: string; kind?: string },
@@ -517,10 +517,10 @@ export function listReports(
     params.push(filters.kind);
   }
   if (filters.q) {
-    clauses.push("(r.title LIKE ? OR r.report_ref LIKE ?)");
+    clauses.push("(r.title ILIKE ? OR r.report_ref ILIKE ?)");
     params.push(`%${filters.q}%`, `%${filters.q}%`);
   }
-  return all<{
+  return await all<{
     id: string;
     report_ref: string;
     kind: string;
@@ -538,8 +538,8 @@ export function listReports(
   );
 }
 
-export function reportRecord(user: SessionUser, scope: Scope, id: string) {
-  const report = get<{
+export async function reportRecord(user: SessionUser, scope: Scope, id: string) {
+  const report = await get<{
     id: string;
     report_ref: string;
     audit_id: string | null;
@@ -572,7 +572,7 @@ export function reportRecord(user: SessionUser, scope: Scope, id: string) {
   ) {
     if (report.audit_outlet_id) {
       const scopeSql = outletScopeSql(scope, "o");
-      const allowed = get<{ id: string }>(
+      const allowed = await get<{ id: string }>(
         `SELECT o.id FROM outlets o WHERE o.id=? AND ${scopeSql.sql}`,
         [report.audit_outlet_id, ...scopeSql.params],
       );

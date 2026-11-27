@@ -1,30 +1,24 @@
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 export function BrandMark({ className, light = false }: { className?: string; light?: boolean }) {
   return (
     <span
       className={cn(
-        "grid size-9 shrink-0 place-items-center rounded-lg bg-[#d71920] text-white shadow-sm",
+        "relative grid size-9 shrink-0 place-items-center",
+        light && "drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]",
         className,
       )}
       aria-hidden
     >
-      <svg viewBox="0 0 24 24" className="size-5" fill="none">
-        <path
-          d="M12 2.8 20 5.8v6.1c0 5.2-3.3 8.7-8 10.5-4.7-1.8-8-5.3-8-10.5V5.8l8-3Z"
-          fill="currentColor"
-          opacity={light ? 0.24 : 0.16}
-          stroke="currentColor"
-          strokeWidth="1.3"
-        />
-        <path
-          d="m8.5 11.8 2.2 2.3 4.9-5"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
+      <Image
+        src="/logo.png"
+        alt=""
+        width={512}
+        height={372}
+        priority
+        className="size-full object-contain"
+      />
     </span>
   );
 }

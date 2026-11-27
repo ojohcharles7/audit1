@@ -13,16 +13,16 @@ import { canAccessAudit, getScope } from "@/lib/scope";
 
 export async function approveAuditAction(formData: FormData) {
   const user = await requirePermission("audits.approve");
-  const scope = getScope(user);
+  const scope = await getScope(user);
   const id = String(formData.get("auditId") ?? "");
-  const audit = get<{ ref: string; status: string; auditor_id: string; outlet_id: string }>(
+  const audit = await get<{ ref: string; status: string; auditor_id: string; outlet_id: string }>(
     "SELECT ref, status, auditor_id, outlet_id FROM audits WHERE id = ?",
     [id],
   );
-  if (!audit || !canAccessAudit(scope, id)) redirect("/audits?error=Audit+not+found");
+  if (!audit || !(await canAccessAudit(scope, id))) redirect("/audits?error=Audit+not+found");
   if (!["submitted", "under_review"].includes(audit.status)) redirect(`/audits/${id}?error=Only+submitted+audits+can+be+approved`);
 
-  const report = createReportRecord({
+  const report = await createReportRecord({
     user,
     scope,
     kind: "audit",
@@ -30,16 +30,16 @@ export async function approveAuditAction(formData: FormData) {
     from: new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
     to: new Date().toISOString().slice(0, 10),
   });
-  run("UPDATE audits SET status='approved', approved_by=?, approved_at=? WHERE id=?", [user.id, nowIso(), id]);
-  logActivity({
+  await run("UPDATE audits SET status='approved', approved_by=?, approved_at=? WHERE id=?", [user.id, nowIso(), id]);
+  await logActivity({
     actorId: user.id,
     action: "audit.approved",
     entityType: "audit",
     entityId: id,
     summary: `Approved audit ${audit.ref}`,
   });
-  const recipients = [audit.auditor_id, ...notifyUserIdsForOutlet(audit.outlet_id)];
-  notifyUsers([...new Set(recipients)], {
+  const recipients = [audit.auditor_id, ...(await notifyUserIdsForOutlet(audit.outlet_id))];
+  await notifyUsers([...new Set(recipients)], {
     type: "audit",
     severity: "success",
     title: `Audit approved — ${audit.ref}`,
@@ -54,10 +54,10 @@ export async function approveAuditAction(formData: FormData) {
 
 export async function generateAuditReportAction(formData: FormData) {
   const user = await requirePermission("reports.generate");
-  const scope = getScope(user);
+  const scope = await getScope(user);
   const auditId = String(formData.get("auditId") ?? "");
-  if (!canAccessAudit(scope, auditId)) redirect("/audits?error=Access+denied");
-  const report = createReportRecord({
+  if (!(await canAccessAudit(scope, auditId))) redirect("/audits?error=Access+denied");
+  const report = await createReportRecord({
     user,
     scope,
     kind: "audit",
@@ -86,21 +86,21 @@ const findingSchema = z.object({
 
 export async function addAuditFindingAction(formData: FormData) {
   const user = await requirePermission("findings.create");
-  const scope = getScope(user);
+  const scope = await getScope(user);
   const parsed = findingSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     const auditId = String(formData.get("auditId") ?? "");
     redirect(`/audits/${auditId}?error=Complete+all+finding+fields`);
   }
   const data = parsed.data;
-  if (!canAccessAudit(scope, data.auditId)) redirect("/audits?error=Access+denied");
-  const audit = get<{ outlet_id: string; ref: string }>("SELECT outlet_id, ref FROM audits WHERE id=?", [data.auditId]);
+  if (!(await canAccessAudit(scope, data.auditId))) redirect("/audits?error=Access+denied");
+  const audit = await get<{ outlet_id: string; ref: string }>("SELECT outlet_id, ref FROM audits WHERE id=?", [data.auditId]);
   if (!audit) redirect("/audits?error=Audit+not+found");
-  const manager = get<{ id: string }>(
+  const manager = await get<{ id: string }>(
     "SELECT id FROM users WHERE outlet_id=? AND role='outlet_manager' AND deleted_at IS NULL LIMIT 1",
     [audit.outlet_id],
   );
-  const finding = raiseFinding({
+  const finding = await raiseFinding({
     actorId: user.id,
     outletId: audit.outlet_id,
     auditId: data.auditId,
@@ -124,14 +124,14 @@ export async function addAuditFindingAction(formData: FormData) {
 
 export async function updateAuditWorkflowAction(formData: FormData) {
   const user = await requirePermission("audits.conduct");
-  const scope = getScope(user);
+  const scope = await getScope(user);
   const auditId = String(formData.get("auditId") ?? "");
   const nextStatus = String(formData.get("status") ?? "");
   if (!["under_review", "closed", "approved"].includes(nextStatus)) redirect(`/audits/${auditId}?error=Invalid+status`);
-  if (!canAccessAudit(scope, auditId)) redirect("/audits?error=Access+denied");
+  if (!(await canAccessAudit(scope, auditId))) redirect("/audits?error=Access+denied");
   if (nextStatus === "approved" && user.role !== "head_audit") redirect(`/audits/${auditId}?error=Only+the+Head+of+Audit+can+approve`);
-  run("UPDATE audits SET status=? WHERE id=?", [nextStatus, auditId]);
-  logActivity({
+  await run("UPDATE audits SET status=? WHERE id=?", [nextStatus, auditId]);
+  await logActivity({
     actorId: user.id,
     action: `audit.${nextStatus}`,
     entityType: "audit",
@@ -145,9 +145,9 @@ export async function updateAuditWorkflowAction(formData: FormData) {
 export async function notifyAuditManagerAction(formData: FormData) {
   const user = await requirePermission("audits.conduct");
   const auditId = String(formData.get("auditId") ?? "");
-  const audit = get<{ manager_id: string | null; ref: string }>("SELECT manager_id, ref FROM audits WHERE id=?", [auditId]);
+  const audit = await get<{ manager_id: string | null; ref: string }>("SELECT manager_id, ref FROM audits WHERE id=?", [auditId]);
   if (audit?.manager_id) {
-    notifyUsers([audit.manager_id], {
+    await notifyUsers([audit.manager_id], {
       type: "audit",
       severity: "info",
       title: `Review requested — ${audit.ref}`,

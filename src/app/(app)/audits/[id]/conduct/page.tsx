@@ -11,9 +11,9 @@ export const metadata = { title: "Conduct audit" };
 
 export default async function ConductAuditPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requirePermission("audits.conduct");
-  const scope = getScope(user);
+  const scope = await getScope(user);
   const { id } = await params;
-  const data = auditDetail(scope, id);
+  const data = await auditDetail(scope, id);
   if (!data) notFound();
   const { audit, questions, responses, documents, responseDocuments } = data;
   if (audit.locked_at || ["submitted", "approved", "closed", "cancelled"].includes(audit.status)) {

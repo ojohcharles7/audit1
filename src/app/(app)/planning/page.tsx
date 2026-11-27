@@ -33,16 +33,16 @@ export default async function PlanningPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const user = await requirePermission("planning.view");
-  const scope = getScope(user);
+  const scope = await getScope(user);
   const sp = await searchParams;
   const month = typeof sp.month === "string" && /^\d{4}-\d{2}$/.test(sp.month) ? sp.month : CURRENT_MONTH;
   const { first, days, startDay } = monthBounds(month);
-  const calendarAudits = scheduledCalendar(scope, month);
-  const tasks = planningAudits(scope);
-  const schedules = auditSchedules(scope);
-  const outlets = outletsForScope(scope);
-  const templateOptions = templates();
-  const auditorOptions = auditors();
+  const calendarAudits = await scheduledCalendar(scope, month);
+  const tasks = await planningAudits(scope);
+  const schedules = await auditSchedules(scope);
+  const outlets = await outletsForScope(scope);
+  const templateOptions = await templates();
+  const auditorOptions = await auditors();
   const manageable = can(user, "planning.manage");
   const monthLabel = first.toLocaleDateString("en-NG", { month: "long", year: "numeric" });
   const cells: (number | null)[] = [...Array(startDay).fill(null), ...Array.from({ length: days }, (_, i) => i + 1)];

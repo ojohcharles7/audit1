@@ -15,10 +15,10 @@ export const metadata = { title: "Settings" };
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requirePermission("settings.view");
   const sp = await searchParams;
-  const settings = allSettings();
-  const full = get<{ mfa_enabled: number; mfa_secret: string | null; last_login_at: string | null }>("SELECT mfa_enabled, mfa_secret, last_login_at FROM users WHERE id=?", [user.id]);
-  const sessions = all<{ id: string; ip: string | null; user_agent: string | null; created_at: string; last_seen_at: string; expires_at: string }>("SELECT * FROM sessions WHERE user_id=? AND revoked_at IS NULL AND expires_at > ? ORDER BY last_seen_at DESC", [user.id, new Date().toISOString()]);
-  const outbox = all<{ status: string; c: number }>("SELECT status, count(*) c FROM email_outbox GROUP BY status");
+  const settings = await allSettings();
+  const full = await get<{ mfa_enabled: number; mfa_secret: string | null; last_login_at: string | null }>("SELECT mfa_enabled, mfa_secret, last_login_at FROM users WHERE id=?", [user.id]);
+  const sessions = await all<{ id: string; ip: string | null; user_agent: string | null; created_at: string; last_seen_at: string; expires_at: string }>("SELECT * FROM sessions WHERE user_id=? AND revoked_at IS NULL AND expires_at > ? ORDER BY last_seen_at DESC", [user.id, new Date().toISOString()]);
+  const outbox = await all<{ status: string; c: number }>("SELECT status, count(*) c FROM email_outbox GROUP BY status");
   const pendingEmails = outbox.find((row) => row.status === "pending")?.c ?? 0;
   const manage = can(user, "settings.manage");
   const mfaUri = typeof sp.uri === "string" ? sp.uri : null;

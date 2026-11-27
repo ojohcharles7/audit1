@@ -16,14 +16,14 @@ export const metadata = { title: "Fraud investigations" };
 
 export default async function FraudPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requirePermission("fraud.view");
-  const scope = getScope(user);
+  const scope = await getScope(user);
   const sp = await searchParams;
   const status = typeof sp.status === "string" ? sp.status : "";
   const type = typeof sp.type === "string" ? sp.type : "";
   const q = typeof sp.q === "string" ? sp.q : "";
   const accessFilter = user.role === "head_audit" || user.role === "audit_manager" ? "1=1" : "(fc.officer_id=? OR fc.created_by=? OR fc.id IN (SELECT case_id FROM case_access WHERE user_id=?))";
   const accessParams = user.role === "head_audit" || user.role === "audit_manager" ? [] : [user.id, user.id, user.id];
-  const cases = all<{ id: string; ref: string; title: string; type: string; status: string; suspected_exposure_kobo: number; incident_date: string; officer_name: string; outlet_name: string | null; update_count: number }>(
+  const cases = await all<{ id: string; ref: string; title: string; type: string; status: string; suspected_exposure_kobo: number; incident_date: string; officer_name: string; outlet_name: string | null; update_count: number }>(
     `SELECT fc.id, fc.ref, fc.title, fc.type, fc.status, fc.suspected_exposure_kobo, fc.incident_date, u.name officer_name, o.name outlet_name,
       (SELECT count(*) FROM fraud_updates fu WHERE fu.case_id=fc.id) update_count
      FROM fraud_cases fc JOIN users u ON u.id=fc.officer_id LEFT JOIN outlets o ON o.id=fc.outlet_id
@@ -55,8 +55,8 @@ export default async function FraudPage({ searchParams }: { searchParams: Promis
           <form action={createFraudCaseAction} className="grid gap-3 sm:grid-cols-2">
             <div><label className="label">Case title</label><input name="title" required className="input" /></div>
             <div><label className="label">Fraud type</label><select name="type" className="select">{FRAUD_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}</select></div>
-            <div><label className="label">Investigation officer</label><select name="officerId" required className="select"><option value="">Assign officer</option>{auditors().map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
-            <div><label className="label">Outlet</label><select name="outletId" className="select"><option value="">No specific outlet</option>{outletsForScope(scope).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></div>
+            <div><label className="label">Investigation officer</label><select name="officerId" required className="select"><option value="">Assign officer</option>{(await auditors()).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
+            <div><label className="label">Outlet</label><select name="outletId" className="select"><option value="">No specific outlet</option>{(await outletsForScope(scope)).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></div>
             <div><label className="label">Suspected exposure (₦)</label><input name="exposure" type="number" min="0" step="0.01" className="input" /></div>
             <div><label className="label">Incident date</label><input name="incidentDate" type="date" required defaultValue={DATE_TODAY} className="input" /></div>
             <div><label className="label">Incident location</label><input name="location" className="input" /></div>

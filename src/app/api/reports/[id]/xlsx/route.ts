@@ -9,7 +9,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const user = await getSessionUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
   const { id } = await params;
-  const report = reportRecord(user, getScope(user), id);
+  const report = await reportRecord(user, await getScope(user), id);
   if (!report) return new Response("Not found", { status: 404 });
   const snapshot = report.snapshot;
   const workbook = new ExcelJS.Workbook();

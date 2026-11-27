@@ -20,20 +20,20 @@ export async function POST(request: Request) {
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   const auditId = parsed.data.auditId;
-  const audit = get<AuditRow & { outlet_name: string }>(
+  const audit = await get<AuditRow & { outlet_name: string }>(
     "SELECT a.*, o.name outlet_name FROM audits a JOIN outlets o ON o.id=a.outlet_id WHERE a.id=?",
     [auditId],
   );
   if (!audit) return NextResponse.json({ error: "Audit not found" }, { status: 404 });
-  if (!canAccessAudit(getScope(user), auditId)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessAudit(await getScope(user), auditId))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (!canConductAudit(user, audit)) return NextResponse.json({ error: "You are not assigned to this audit" }, { status: 403 });
   if (audit.locked_at) return NextResponse.json({ error: "Audit already submitted" }, { status: 409 });
 
-  const questions = all<QuestionRow>(
+  const questions = await all<QuestionRow>(
     "SELECT * FROM checklist_questions WHERE template_id=? AND active=1 ORDER BY sort_order",
     [audit.template_id],
   );
-  const responses = all<ResponseRow>(
+  const responses = await all<ResponseRow>(
     `SELECT r.*, (SELECT count(*) FROM audit_response_documents rd WHERE rd.response_id=r.id) document_count
      FROM audit_responses r WHERE r.audit_id=?`,
     [auditId],
@@ -58,13 +58,13 @@ export async function POST(request: Request) {
 
   const submittedAt = nowIso();
   const rating = breakdown.score >= 85 ? "low" : breakdown.score >= 70 ? "medium" : breakdown.score >= 55 ? "high" : "critical";
-  const manager = get<{ id: string }>(
+  const manager = await get<{ id: string }>(
     "SELECT id FROM users WHERE outlet_id=? AND role='outlet_manager' AND deleted_at IS NULL LIMIT 1",
     [audit.outlet_id],
   );
   const questionMap = new Map(questions.map((question) => [question.id, question]));
   const existingResponses = new Set(
-    all<{ source_response_id: string }>("SELECT source_response_id FROM findings WHERE source_response_id IS NOT NULL AND audit_id=?", [auditId]).map(
+    (await all<{ source_response_id: string }>("SELECT source_response_id FROM findings WHERE source_response_id IS NOT NULL AND audit_id=?", [auditId])).map(
       (row) => row.source_response_id,
     ),
   );
@@ -78,7 +78,7 @@ export async function POST(request: Request) {
     const financial = ["financial", "inventory", "asset", "procurement"].includes(question.category)
       ? response.amount_kobo ?? 0
       : 0;
-    raiseFinding({
+    await raiseFinding({
       actorId: user.id,
       outletId: audit.outlet_id,
       auditId: audit.id,
@@ -99,11 +99,11 @@ export async function POST(request: Request) {
     createdFindings++;
   }
 
-  run(
+  await run(
     "UPDATE audits SET status='submitted', score=?, compliance_rate=?, risk_rating=?, submitted_at=?, completed_at=?, locked_at=? WHERE id=?",
     [breakdown.score, breakdown.complianceRate, rating, submittedAt, submittedAt, submittedAt, auditId],
   );
-  logActivity({
+  await logActivity({
     actorId: user.id,
     action: "audit.submitted",
     entityType: "audit",
@@ -111,15 +111,15 @@ export async function POST(request: Request) {
     summary: `Submitted and locked audit ${audit.ref} with score ${breakdown.score}%`,
     metadata: { score: breakdown.score, findingsCreated: createdFindings },
   });
-  const recipients = [...new Set([audit.manager_id, ...notifyUserIdsForOutlet(audit.outlet_id)].filter(Boolean) as string[])];
-  notifyUsers(recipients, {
+  const recipients = [...new Set([audit.manager_id, ...(await notifyUserIdsForOutlet(audit.outlet_id))].filter(Boolean) as string[])];
+  await notifyUsers(recipients, {
     type: "audit",
     severity: "info",
     title: `Audit submitted — ${audit.ref}`,
     body: `${audit.outlet_name} audit submitted with a score of ${breakdown.score}%. Review the report and approve or request clarification.`,
     link: `/audits/${auditId}`,
   });
-  notifyOutletManagers(audit.outlet_id, {
+  await notifyOutletManagers(audit.outlet_id, {
     type: "audit",
     severity: rating === "critical" ? "critical" : "info",
     title: `Audit outcome — ${audit.ref}`,

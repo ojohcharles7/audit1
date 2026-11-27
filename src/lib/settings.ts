@@ -33,8 +33,8 @@ export const DEFAULT_SETTINGS = {
 
 export type AppSettings = typeof DEFAULT_SETTINGS;
 
-export function getSetting<T = unknown>(key: keyof AppSettings): T {
-  const row = get<{ value_json: string }>("SELECT value_json FROM settings WHERE key = ?", [key]);
+export async function getSetting<T = unknown>(key: keyof AppSettings): Promise<T> {
+  const row = await get<{ value_json: string }>("SELECT value_json FROM settings WHERE key = ?", [key]);
   if (!row) return DEFAULT_SETTINGS[key] as T;
   try {
     return { ...(DEFAULT_SETTINGS[key] as object), ...JSON.parse(row.value_json) } as T;
@@ -43,19 +43,19 @@ export function getSetting<T = unknown>(key: keyof AppSettings): T {
   }
 }
 
-export function setSetting(key: keyof AppSettings, value: unknown, userId?: string) {
-  run(
+export async function setSetting(key: keyof AppSettings, value: unknown, userId?: string) {
+  await run(
     "INSERT INTO settings (key, value_json, updated_at, updated_by) VALUES (?,?,?,?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
     [key, JSON.stringify(value), nowIso(), userId ?? null],
   );
 }
 
-export function allSettings(): AppSettings {
+export async function allSettings(): Promise<AppSettings> {
   return {
-    org: getSetting("org"),
-    scoring: getSetting("scoring"),
-    risk: getSetting("risk"),
-    escalation: getSetting("escalation"),
-    approvals: getSetting("approvals"),
+    org: await getSetting("org"),
+    scoring: await getSetting("scoring"),
+    risk: await getSetting("risk"),
+    escalation: await getSetting("escalation"),
+    approvals: await getSetting("approvals"),
   };
 }

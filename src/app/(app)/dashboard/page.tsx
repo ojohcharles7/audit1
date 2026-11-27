@@ -40,7 +40,7 @@ export default async function DashboardPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const user = await requirePermission("dashboard.view");
-  const scope = getScope(user);
+  const scope = await getScope(user);
   const sp = await searchParams;
   const year = new Date().getFullYear();
   const filters = parseFilters({
@@ -48,12 +48,12 @@ export default async function DashboardPage({
     from: (sp.from as string) || `${year}-01-01`,
     to: (sp.to as string) || `${year}-12-31`,
   });
-  const data = dashboardData(scope, filters);
-  const matrix = riskMatrixCounts(scope);
-  const regionOptions = regions();
-  const stateOptions = states();
-  const outletOptions = outletsForScope(scope);
-  const auditorOptions = auditors();
+  const data = await dashboardData(scope, filters);
+  const matrix = await riskMatrixCounts(scope);
+  const regionOptions = await regions();
+  const stateOptions = await states();
+  const outletOptions = await outletsForScope(scope);
+  const auditorOptions = await auditors();
   const denied = typeof sp.denied === "string" ? sp.denied : null;
   const orgName = "Crunchies Fried Chicken";
 

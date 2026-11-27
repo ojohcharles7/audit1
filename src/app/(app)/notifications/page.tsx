@@ -13,12 +13,12 @@ export default async function NotificationsPage({ searchParams }: { searchParams
   const user = await requirePermission("notifications.view");
   const sp = await searchParams;
   const unread = sp.unread === "1";
-  const notifications = all<{ id: string; type: string; severity: string; title: string; body: string; link: string | null; read_at: string | null; created_at: string }>(
+  const notifications = await all<{ id: string; type: string; severity: string; title: string; body: string; link: string | null; read_at: string | null; created_at: string }>(
     `SELECT * FROM notifications WHERE user_id=? AND (? = 0 OR read_at IS NULL) ORDER BY created_at DESC LIMIT 100`,
     [user.id, unread ? 1 : 0],
   );
-  const allCount = all<{ c: number }>("SELECT count(*) c FROM notifications WHERE user_id=?", [user.id])[0]?.c ?? 0;
-  const unreadCount = all<{ c: number }>("SELECT count(*) c FROM notifications WHERE user_id=? AND read_at IS NULL", [user.id])[0]?.c ?? 0;
+  const allCount = (await all<{ c: number }>("SELECT count(*) c FROM notifications WHERE user_id=?", [user.id]))[0]?.c ?? 0;
+  const unreadCount = (await all<{ c: number }>("SELECT count(*) c FROM notifications WHERE user_id=? AND read_at IS NULL", [user.id]))[0]?.c ?? 0;
   return (
     <div>
       <PageHeader eyebrow="Notification centre" title="Notifications" description="Audit assignments, report approvals, critical findings, overdue actions and investigation alerts." actions={unreadCount ? <form action={markAllReadAction}><SubmitButton className="btn-secondary"><CheckCheck className="size-4" /> Mark all read</SubmitButton></form> : null} />

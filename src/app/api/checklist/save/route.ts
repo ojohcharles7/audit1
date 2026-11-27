@@ -21,18 +21,18 @@ const schema = z.object({
 });
 
 async function scoreAudit(auditId: string, templateId: string) {
-  const questions = all<QuestionRow>(
+  const questions = await all<QuestionRow>(
     "SELECT * FROM checklist_questions WHERE template_id=? AND active=1 ORDER BY sort_order",
     [templateId],
   );
-  const responses = all<ResponseRow>(
+  const responses = await all<ResponseRow>(
     `SELECT r.*, (SELECT count(*) FROM audit_response_documents rd WHERE rd.response_id=r.id) document_count
      FROM audit_responses r WHERE r.audit_id=?`,
     [auditId],
   );
   const breakdown = calculateAuditScore(questions, responses);
   const rating = breakdown.score >= 85 ? "low" : breakdown.score >= 70 ? "medium" : breakdown.score >= 55 ? "high" : "critical";
-  run("UPDATE audits SET score=?, compliance_rate=?, risk_rating=? WHERE id=?", [
+  await run("UPDATE audits SET score=?, compliance_rate=?, risk_rating=? WHERE id=?", [
     breakdown.score,
     breakdown.complianceRate,
     rating,
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid response" }, { status: 400 });
   const data = parsed.data;
-  const audit = get<{
+  const audit = await get<{
     id: string;
     template_id: string;
     auditor_id: string;
@@ -60,20 +60,20 @@ export async function POST(request: Request) {
     ref: string;
   }>("SELECT id, template_id, auditor_id, manager_id, created_by, outlet_id, status, locked_at, ref FROM audits WHERE id=?", [data.auditId]);
   if (!audit) return NextResponse.json({ error: "Audit not found" }, { status: 404 });
-  if (!canAccessAudit(getScope(user), audit.id)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessAudit(await getScope(user), audit.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (!canConductAudit(user, audit)) return NextResponse.json({ error: "You are not assigned to conduct this audit" }, { status: 403 });
   if (audit.locked_at) return NextResponse.json({ error: "This audit has been submitted and locked" }, { status: 409 });
-  const question = get<QuestionRow>("SELECT * FROM checklist_questions WHERE id=? AND template_id=?", [data.questionId, audit.template_id]);
+  const question = await get<QuestionRow>("SELECT * FROM checklist_questions WHERE id=? AND template_id=?", [data.questionId, audit.template_id]);
   if (!question) return NextResponse.json({ error: "Question does not belong to this audit" }, { status: 400 });
 
-  const result = transaction((db) => {
-    const existing = db
+  const result = await transaction(async (db) => {
+    const existing = (await db
       .prepare("SELECT id FROM audit_responses WHERE audit_id=? AND question_id=?")
-      .get(audit.id, question.id) as { id: string } | undefined;
+      .get(audit.id, question.id)) as { id: string } | undefined;
     const responseId = existing?.id ?? newId();
     const now = nowIso();
     if (existing) {
-      db.prepare(
+      await db.prepare(
         "UPDATE audit_responses SET result=?, score_awarded=?, numeric_value=?, text_value=?, amount_kobo=?, comment=?, answered_by=?, answered_at=COALESCE(answered_at, ?), updated_at=? WHERE id=?",
       ).run(
         data.result ?? null,
@@ -88,7 +88,7 @@ export async function POST(request: Request) {
         responseId,
       );
     } else {
-      db.prepare(
+      await db.prepare(
         "INSERT INTO audit_responses (id, audit_id, question_id, result, numeric_value, text_value, amount_kobo, comment, answered_by, answered_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
       ).run(
         responseId,
@@ -107,27 +107,31 @@ export async function POST(request: Request) {
 
     if (data.documentIds) {
       const valid = data.documentIds.length
-        ? (db
+        ? ((await db
             .prepare(
               `SELECT id FROM documents WHERE deleted_at IS NULL AND (audit_id=? OR uploaded_by=?) AND id IN (${data.documentIds.map(() => "?").join(",")})`,
             )
-            .all(audit.id, user.id, ...data.documentIds) as { id: string }[])
+            .all(audit.id, user.id, ...data.documentIds)) as { id: string }[])
         : [];
-      db.prepare("DELETE FROM audit_response_documents WHERE response_id=?").run(responseId);
+      await db.prepare("DELETE FROM audit_response_documents WHERE response_id=?").run(responseId);
       for (const doc of valid) {
-        db.prepare("INSERT OR IGNORE INTO audit_response_documents (response_id, document_id) VALUES (?,?)").run(responseId, doc.id);
+        await db
+          .prepare("INSERT INTO audit_response_documents (response_id, document_id) VALUES (?,?) ON CONFLICT DO NOTHING")
+          .run(responseId, doc.id);
       }
     }
 
     if (audit.status === "scheduled") {
-      db.prepare("UPDATE audits SET status='in_progress', started_at=COALESCE(started_at, ?) WHERE id=?").run(now, audit.id);
+      await db
+        .prepare("UPDATE audits SET status='in_progress', started_at=COALESCE(started_at, ?) WHERE id=?")
+        .run(now, audit.id);
     }
     return responseId;
   });
 
   const scored = await scoreAudit(audit.id, audit.template_id);
   if (audit.status === "scheduled") {
-    logActivity({
+    await logActivity({
       actorId: user.id,
       action: "audit.started",
       entityType: "audit",

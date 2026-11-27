@@ -21,14 +21,14 @@ export default async function FindingsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const user = await requirePermission("findings.view");
-  const scope = getScope(user);
+  const scope = await getScope(user);
   const sp = await searchParams;
   const filters = parseFilters(sp);
-  const findings = listFindings(scope, filters);
-  const stats = findingStats(scope);
-  const outletOptions = outletsForScope(scope);
-  const auditOptions = allAuditsForSelect(scope);
-  const staff = staffList();
+  const findings = await listFindings(scope, filters);
+  const stats = await findingStats(scope);
+  const outletOptions = await outletsForScope(scope);
+  const auditOptions = await allAuditsForSelect(scope);
+  const staff = await staffList();
 
   return (
     <div>
@@ -90,7 +90,7 @@ export default async function FindingsPage({
         <div className="mt-4" id="new-finding">
           <Panel title="Raise a new finding" description="Record an exception identified outside a checklist or start a new audit follow-up.">
             <form action={createFindingAction} className="grid gap-3 sm:grid-cols-2">
-              <div><label className="label">Outlet</label><select name="outletId" required className="select"><option value="">Select outlet</option>{findingOptions(scope).map((outlet) => <option key={outlet.id} value={outlet.id}>{outlet.name}</option>)}</select></div>
+              <div><label className="label">Outlet</label><select name="outletId" required className="select"><option value="">Select outlet</option>{(await findingOptions(scope)).map((outlet) => <option key={outlet.id} value={outlet.id}>{outlet.name}</option>)}</select></div>
               <div><label className="label">Linked audit (optional)</label><select name="auditId" className="select"><option value="">No linked audit</option>{auditOptions.map((audit) => <option key={audit.id} value={audit.id}>{audit.ref} · {audit.outlet_name}</option>)}</select></div>
               <div><label className="label">Title</label><input name="title" required className="input" /></div>
               <div><label className="label">Category</label><select name="category" className="select">{AUDIT_CATEGORIES.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}</select></div>

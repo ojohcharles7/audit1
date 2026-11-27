@@ -1,8 +1,8 @@
-import { newId, nextYearRef, nowIso, run } from "@/db";
+import { get, newId, nextYearRef, nowIso, run } from "@/db";
 import { logActivity } from "./activity";
 import { escalateCriticalFinding, notifyOutletManagers, notifyUsers } from "./notifications";
 
-export function raiseFinding(input: {
+export async function raiseFinding(input: {
   actorId: string;
   outletId: string;
   auditId?: string | null;
@@ -23,9 +23,9 @@ export function raiseFinding(input: {
   createAction?: boolean;
 }) {
   const id = newId();
-  const ref = nextYearRef("finding", "FND");
+  const ref = await nextYearRef("finding", "FND");
   const createdAt = nowIso();
-  run(
+  await run(
     `INSERT INTO findings (id, ref, audit_id, outlet_id, category, title, description, expected_control, actual_observation, root_cause, recommendation, financial_impact_kobo, severity, risk_score, status, responsible_user_id, target_date, is_repeated, source_response_id, created_by, created_at, updated_at, version)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
@@ -54,12 +54,12 @@ export function raiseFinding(input: {
       1,
     ],
   );
-  run(
+  await run(
     "INSERT INTO finding_history (id, finding_id, action, from_status, to_status, note, actor_id, created_at) VALUES (?,?,?,?,?,?,?,?)",
     [newId(), id, "created", null, "open", "Finding created and assigned for management response.", input.actorId, createdAt],
   );
 
-  notifyOutletManagers(input.outletId, {
+  await notifyOutletManagers(input.outletId, {
     type: "finding",
     severity: input.severity === "critical" ? "critical" : "warning",
     title: `New ${input.severity} finding — ${ref}`,
@@ -67,7 +67,7 @@ export function raiseFinding(input: {
     link: `/findings/${id}`,
   });
   if (input.responsibleUserId) {
-    notifyUsers([input.responsibleUserId], {
+    await notifyUsers([input.responsibleUserId], {
       type: "finding",
       severity: input.severity === "critical" ? "critical" : "warning",
       title: `Finding assigned — ${ref}`,
@@ -76,10 +76,10 @@ export function raiseFinding(input: {
     });
   }
   if (input.severity === "critical") {
-    escalateCriticalFinding({ findingId: id, ref, title: input.title, outletId: input.outletId, severity: input.severity });
+    await escalateCriticalFinding({ findingId: id, ref, title: input.title, outletId: input.outletId, severity: input.severity });
   }
   if (input.createAction !== false && input.responsibleUserId) {
-    createCorrectiveAction({
+    await createCorrectiveAction({
       actorId: input.actorId,
       findingId: id,
       description: `Remediate: ${input.title}`,
@@ -89,7 +89,7 @@ export function raiseFinding(input: {
       priority: input.severity,
     });
   }
-  logActivity({
+  await logActivity({
     actorId: input.actorId,
     action: "finding.created",
     entityType: "finding",
@@ -100,7 +100,7 @@ export function raiseFinding(input: {
   return { id, ref };
 }
 
-export function createCorrectiveAction(input: {
+export async function createCorrectiveAction(input: {
   actorId: string;
   findingId: string;
   description: string;
@@ -111,20 +111,20 @@ export function createCorrectiveAction(input: {
   dueDays?: number;
 }) {
   const id = newId();
-  const ref = nextYearRef("action", "CAPA");
+  const ref = await nextYearRef("action", "CAPA");
   const due = input.dueDate ?? new Date(Date.now() + (input.dueDays ?? 30) * 86_400_000).toISOString().slice(0, 10);
-  run(
+  await run(
     "INSERT INTO corrective_actions (id, ref, finding_id, description, department, officer_id, due_date, priority, progress, status, created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
     [id, ref, input.findingId, input.description, input.department ?? null, input.officerId, due, input.priority ?? "medium", 0, "not_started", input.actorId, nowIso(), nowIso()],
   );
-  notifyUsers([input.officerId], {
+  await notifyUsers([input.officerId], {
     type: "action",
     severity: "info",
     title: `Corrective action assigned — ${ref}`,
     body: `${input.description}. Due ${due}.`,
     link: `/actions/${id}`,
   });
-  logActivity({
+  await logActivity({
     actorId: input.actorId,
     action: "action.created",
     entityType: "corrective_action",
@@ -134,18 +134,21 @@ export function createCorrectiveAction(input: {
   return { id, ref };
 }
 
-export function setFindingStatus(input: {
+export async function setFindingStatus(input: {
   findingId: string;
   actorId: string;
   status: string;
   note: string;
   action: string;
 }) {
-  const before = run("SELECT status FROM findings WHERE id = ?", [input.findingId]);
-  void before;
-  run("UPDATE findings SET status = ?, updated_at = ? WHERE id = ?", [input.status, nowIso(), input.findingId]);
-  run(
+  const before = await get<{ status: string }>("SELECT status FROM findings WHERE id = ?", [input.findingId]);
+  await run("UPDATE findings SET status = ?, updated_at = ? WHERE id = ?", [
+    input.status,
+    nowIso(),
+    input.findingId,
+  ]);
+  await run(
     "INSERT INTO finding_history (id, finding_id, action, from_status, to_status, note, actor_id, created_at) VALUES (?,?,?,?,?,?,?,?)",
-    [newId(), input.findingId, input.action, null, input.status, input.note, input.actorId, nowIso()],
+    [newId(), input.findingId, input.action, before?.status ?? null, input.status, input.note, input.actorId, nowIso()],
   );
 }

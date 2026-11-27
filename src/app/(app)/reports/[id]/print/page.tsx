@@ -7,9 +7,9 @@ import { PrintButton } from "@/components/print-button";
 
 export default async function PrintReportPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requirePermission("reports.view");
-  const scope = getScope(user);
+  const scope = await getScope(user);
   const { id } = await params;
-  const report = reportRecord(user, scope, id);
+  const report = await reportRecord(user, scope, id);
   if (!report) notFound();
   return (
     <div className="bg-slate-100 p-2 sm:p-6">

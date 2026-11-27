@@ -10,9 +10,9 @@ import { DetailList, KpiCard, PageHeader, Panel, Progress, Score, SeverityBadge,
 
 export default async function OutletDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requirePermission("outlets.view");
-  const scope = getScope(user);
+  const scope = await getScope(user);
   const { id } = await params;
-  const data = outletDetail(scope, id);
+  const data = await outletDetail(scope, id);
   if (!data) notFound();
   const { outlet, audits, findings, actions, risks, documents, categoryScores, counts } = data;
   const latestAudit = audits.find((a) => ["approved", "closed", "submitted"].includes(a.status));

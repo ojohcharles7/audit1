@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import type { Database } from "better-sqlite3";
+import type { Db } from "./index";
 import { hashPassword } from "../lib/auth/password";
 import { calculateAuditScore, resultPercent } from "../lib/scoring";
 import { computeRisk } from "../lib/risk";
@@ -99,27 +99,18 @@ const DB_TABLES = [
   "counters",
 ];
 
-function reset(db: Database) {
-  db.pragma("foreign_keys = OFF");
-  const triggers = [
-    "trg_activity_no_update",
-    "trg_activity_no_delete",
-    "trg_fraud_updates_no_update",
-    "trg_fraud_updates_no_delete",
-    "trg_responses_no_insert_locked",
-    "trg_responses_no_update_locked",
-    "trg_responses_no_delete_locked",
-    "trg_reports_no_delete",
-  ];
-  for (const t of triggers) db.exec(`DROP TRIGGER IF EXISTS ${t}`);
-  for (const table of DB_TABLES) db.exec(`DELETE FROM ${table}`);
-  db.pragma("foreign_keys = ON");
+async function reset(db: Db) {
+  await db.query("SET statement_timeout = 0");
+  await db.query("SET lock_timeout = 0");
+  await db.query("SET session_replication_role = replica");
+  await db.query(`TRUNCATE TABLE ${DB_TABLES.join(", ")} RESTART IDENTITY CASCADE`);
+  await db.query("SET session_replication_role = origin");
 }
 
-function recreateTriggers(db: Database) {
+async function recreateTriggers(db: Db) {
   const migration = path.join(process.cwd(), "src", "db", "migrations", "001_init.sql");
   const sql = fs.readFileSync(migration, "utf8");
-  db.exec(sql);
+  await db.query(sql);
 }
 
 type UserSeed = {
@@ -218,13 +209,22 @@ function ensureBaseFiles() {
   });
 }
 
-export function seedDatabase(db: Database) {
-  reset(db);
-  recreateTriggers(db);
+export async function seedDatabase(db: Db) {
+  await reset(db);
+  await recreateTriggers(db);
   ensureBaseFiles();
   counters.clear();
 
-  const insert = (sql: string, params: unknown[]) => db.prepare(sql).run(...params);
+  const pending: { sql: string; params: unknown[] }[] = [];
+  const insert = (sql: string, params: unknown[]) => {
+    pending.push({ sql, params });
+  };
+  const flush = async () => {
+    while (pending.length) {
+      const next = pending.shift()!;
+      await db.prepare(next.sql).run(...next.params);
+    }
+  };
 
   for (const region of REGIONS) {
     insert("INSERT INTO regions (id, name, code) VALUES (?,?,?)", [region.id, region.name, region.code]);
@@ -1116,13 +1116,15 @@ export function seedDatabase(db: Database) {
     });
   }
 
+  await flush();
+
   for (const outlet of outlets) {
     const latest = audits
       .filter((a) => a.outlet_id === outlet.id && ["approved", "closed"].includes(a.status))
       .sort((a, b) => (b.completed_at ?? "").localeCompare(a.completed_at ?? ""))[0];
     if (latest) {
-      const openCritical = (db.prepare("SELECT count(*) c FROM findings WHERE outlet_id=? AND severity='critical' AND status NOT IN ('resolved','rejected')").get(outlet.id) as { c: number }).c;
-      const openHigh = (db.prepare("SELECT count(*) c FROM findings WHERE outlet_id=? AND severity='high' AND status NOT IN ('resolved','rejected')").get(outlet.id) as { c: number }).c;
+      const openCritical = ((await db.prepare("SELECT count(*)::int c FROM findings WHERE outlet_id=? AND severity='critical' AND status NOT IN ('resolved','rejected')").get(outlet.id)) as { c: number }).c;
+      const openHigh = ((await db.prepare("SELECT count(*)::int c FROM findings WHERE outlet_id=? AND severity='high' AND status NOT IN ('resolved','rejected')").get(outlet.id)) as { c: number }).c;
       const scoreRisk = latest.score >= 85 ? "low" : latest.score >= 70 ? "medium" : latest.score >= 55 ? "high" : "critical";
       const risk = openCritical >= 2 ? "critical" : openCritical >= 1 || openHigh >= 4 ? "high" : scoreRisk;
       insert("UPDATE outlets SET last_audit_score = ?, last_audit_at = ?, risk_rating = ?, compliance_status = ? WHERE id = ?", [
@@ -1704,8 +1706,10 @@ export function seedDatabase(db: Database) {
     [`risk:${YEAR}`, counters.get("risk") ?? 0],
   ];
   for (const [key, value] of counterKeys) {
-    insert("INSERT OR REPLACE INTO counters (name, value) VALUES (?,?)", [key, value]);
+    insert("INSERT INTO counters (name, value) VALUES (?,?) ON CONFLICT (name) DO UPDATE SET value = excluded.value", [key, value]);
   }
+
+  await flush();
 
   return {
     users: users.length,

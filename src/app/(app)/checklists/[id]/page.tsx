@@ -13,9 +13,9 @@ import { addQuestionAction, toggleTemplateAction } from "../actions";
 export default async function TemplateDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requirePermission("checklists.view");
   const { id } = await params;
-  const template = get<{ id: string; code: string; name: string; category: string; version: number; description: string | null; active: number }>("SELECT * FROM audit_templates WHERE id=?", [id]);
+  const template = await get<{ id: string; code: string; name: string; category: string; version: number; description: string | null; active: number }>("SELECT * FROM audit_templates WHERE id=?", [id]);
   if (!template) notFound();
-  const questions = all<{ id: string; section: string; code: string; text: string; control_objective: string | null; response_type: string; risk_level: string; evidence_required: string; weight: number; mandatory: number }>(
+  const questions = await all<{ id: string; section: string; code: string; text: string; control_objective: string | null; response_type: string; risk_level: string; evidence_required: string; weight: number; mandatory: number }>(
     "SELECT * FROM checklist_questions WHERE template_id=? AND active=1 ORDER BY sort_order",
     [id],
   );

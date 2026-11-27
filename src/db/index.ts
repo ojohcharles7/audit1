@@ -1,85 +1,188 @@
-import Database from "better-sqlite3";
-import fs from "node:fs";
-import path from "node:path";
+import { AsyncLocalStorage } from "node:async_hooks";
 import crypto from "node:crypto";
+import { Pool, types, type PoolClient, type QueryResultRow } from "pg";
 
-export type Db = Database.Database;
+types.setTypeParser(20, (value) => (value === null ? null : Number(value)));
+types.setTypeParser(1700, (value) => (value === null ? null : Number(value)));
 
-const globalForDb = globalThis as unknown as { __crunchiesAuditDb?: Db };
+export type Db = {
+  prepare: (sql: string) => {
+    all: (...params: unknown[]) => Promise<Record<string, unknown>[]>;
+    get: (...params: unknown[]) => Promise<Record<string, unknown> | undefined>;
+    run: (...params: unknown[]) => Promise<{ changes: number }>;
+  };
+  query: (
+    sql: string,
+    params?: unknown[],
+  ) => Promise<{ rows: Record<string, unknown>[]; changes: number }>;
+};
 
-function databasePath() {
-  const configured = process.env.DATABASE_PATH || ".data/audit.db";
-  return path.isAbsolute(configured)
-    ? configured
-    : path.join(/* turbopackIgnore: true */ process.cwd(), configured);
-}
+const globalForDb = globalThis as unknown as { __crunchiesAuditPool?: Pool };
+const txStore = new AsyncLocalStorage<PoolClient>();
 
-function migrationFiles() {
-  const dir = path.join(process.cwd(), "src", "db", "migrations");
-  if (!fs.existsSync(dir)) return [];
-  return fs
-    .readdirSync(dir)
-    .filter((file) => file.endsWith(".sql"))
-    .sort();
-}
-
-function migrate(db: Db) {
-  db.exec(
-    "CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)",
-  );
-  const applied = new Set(
-    db.prepare("SELECT name FROM _migrations").all().map((row) => (row as { name: string }).name),
-  );
-  for (const file of migrationFiles()) {
-    if (applied.has(file)) continue;
-    const sql = fs.readFileSync(path.join(process.cwd(), "src", "db", "migrations", file), "utf8");
-    const tx = db.transaction(() => {
-      db.exec(sql);
-      db.prepare("INSERT INTO _migrations (name, applied_at) VALUES (?, ?)").run(
-        file,
-        new Date().toISOString(),
-      );
-    });
-    tx();
+function connectionString() {
+  const url = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+  if (!url) {
+    throw new Error(
+      "DATABASE_URL is not set. Add the Supabase Postgres connection string to your environment.",
+    );
   }
+  return url;
 }
 
-export function createDb(file = databasePath()): Db {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const db = new Database(file);
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
-  db.pragma("busy_timeout = 5000");
-  migrate(db);
-  return db;
+function sslConfig(url: string) {
+  if (/sslmode=disable/.test(url) || /localhost|127\.0\.0\.1/.test(url)) return undefined;
+  return { rejectUnauthorized: false };
+}
+
+function pool() {
+  if (!globalForDb.__crunchiesAuditPool) {
+    const url = connectionString();
+    const created = new Pool({
+      connectionString: url,
+      ssl: sslConfig(url),
+      max: Number(process.env.PG_POOL_MAX || 5),
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 15_000,
+    });
+    created.on("error", (error) => {
+      console.error("Postgres pool error", error.message);
+    });
+    globalForDb.__crunchiesAuditPool = created;
+  }
+  return globalForDb.__crunchiesAuditPool;
+}
+
+function normalizeParams(params: unknown[]) {
+  return params.map((value) => (value === undefined ? null : value));
+}
+
+function convertPlaceholders(sql: string) {
+  let output = "";
+  let index = 0;
+  let quote: string | null = null;
+  for (let i = 0; i < sql.length; i++) {
+    const char = sql[i]!;
+    if (quote) {
+      output += char;
+      if (char === quote) quote = null;
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = char;
+      output += char;
+      continue;
+    }
+    if (char === "?") {
+      output += `$${++index}`;
+      continue;
+    }
+    output += char;
+  }
+  return output;
+}
+
+function makeDb(client: Pool | PoolClient): Db {
+  return {
+    prepare(sql: string) {
+      const text = convertPlaceholders(sql);
+      return {
+        all: async (...params: unknown[]) => {
+          const result = await client.query<QueryResultRow>(text, normalizeParams(params));
+          return result.rows;
+        },
+        get: async (...params: unknown[]) => {
+          const result = await client.query<QueryResultRow>(text, normalizeParams(params));
+          return result.rows[0];
+        },
+        run: async (...params: unknown[]) => {
+          const result = await client.query(text, normalizeParams(params));
+          return { changes: result.rowCount ?? 0 };
+        },
+      };
+    },
+    async query(sql: string, params: unknown[] = []) {
+      if (params.length) {
+        const result = await client.query<QueryResultRow>(convertPlaceholders(sql), normalizeParams(params));
+        return { rows: result.rows, changes: result.rowCount ?? 0 };
+      }
+      const result = (await client.query(sql)) as unknown as
+        | QueryResultRow[]
+        | { rows: QueryResultRow[]; rowCount: number | null };
+      if (Array.isArray(result)) {
+        return {
+          rows: result.flatMap((item) => (item as unknown as { rows?: QueryResultRow[] }).rows ?? []),
+          changes: result.reduce(
+            (total, item) => total + ((item as unknown as { rowCount?: number }).rowCount ?? 0),
+            0,
+          ),
+        };
+      }
+      return { rows: result.rows, changes: result.rowCount ?? 0 };
+    },
+  };
+}
+
+async function query(sql: string, params: unknown[] = []) {
+  const client = txStore.getStore() ?? pool();
+  return client.query<QueryResultRow>(convertPlaceholders(sql), normalizeParams(params));
 }
 
 export function getDb(): Db {
-  if (!globalForDb.__crunchiesAuditDb) {
-    globalForDb.__crunchiesAuditDb = createDb();
+  return makeDb(pool());
+}
+
+export async function closeDb() {
+  if (globalForDb.__crunchiesAuditPool) {
+    await globalForDb.__crunchiesAuditPool.end();
+    globalForDb.__crunchiesAuditPool = undefined;
   }
-  return globalForDb.__crunchiesAuditDb;
 }
 
-export function closeDb() {
-  globalForDb.__crunchiesAuditDb?.close();
-  globalForDb.__crunchiesAuditDb = undefined;
+export async function all<T = Record<string, unknown>>(
+  sql: string,
+  params: unknown[] = [],
+): Promise<T[]> {
+  const result = await query(sql, params);
+  return result.rows as T[];
 }
 
-export function all<T = Record<string, unknown>>(sql: string, params: unknown[] = []): T[] {
-  return getDb().prepare(sql).all(...params) as T[];
+export async function get<T = Record<string, unknown>>(
+  sql: string,
+  params: unknown[] = [],
+): Promise<T | undefined> {
+  const result = await query(sql, params);
+  return result.rows[0] as T | undefined;
 }
 
-export function get<T = Record<string, unknown>>(sql: string, params: unknown[] = []): T | undefined {
-  return getDb().prepare(sql).get(...params) as T | undefined;
+export async function run(sql: string, params: unknown[] = []) {
+  const result = await query(sql, params);
+  return { changes: result.rowCount ?? 0 };
 }
 
-export function run(sql: string, params: unknown[] = []) {
-  return getDb().prepare(sql).run(...params);
+/** Execute a multi-statement SQL script without parameters. */
+export async function exec(sql: string) {
+  const client = txStore.getStore() ?? pool();
+  await client.query(sql);
 }
 
-export function transaction<T>(fn: (db: Db) => T): T {
-  return getDb().transaction(fn)(getDb());
+export async function transaction<T>(fn: (db: Db) => Promise<T> | T): Promise<T> {
+  const client = await pool().connect();
+  try {
+    await client.query("BEGIN");
+    const result = await txStore.run(client, async () => fn(makeDb(client)));
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // ignore rollback failure
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export function nowIso() {
@@ -90,33 +193,25 @@ export function newId() {
   return crypto.randomUUID();
 }
 
-export function nextRef(name: string, prefix: string, width = 4) {
-  const db = getDb();
-  const tx = db.transaction(() => {
-    const row = db.prepare("SELECT value FROM counters WHERE name = ?").get(name) as
-      | { value: number }
-      | undefined;
-    const next = (row?.value ?? 0) + 1;
-    if (row) db.prepare("UPDATE counters SET value = ? WHERE name = ?").run(next, name);
-    else db.prepare("INSERT INTO counters (name, value) VALUES (?, ?)").run(name, next);
-    return `${prefix}-${String(next).padStart(width, "0")}`;
-  });
-  return tx();
+export async function nextRef(name: string, prefix: string, width = 4) {
+  const row = await get<{ value: number }>(
+    `INSERT INTO counters (name, value) VALUES (?, 1)
+     ON CONFLICT (name) DO UPDATE SET value = counters.value + 1
+     RETURNING value`,
+    [name],
+  );
+  return `${prefix}-${String(row?.value ?? 1).padStart(width, "0")}`;
 }
 
 /** Year-scoped reference such as AUD-2026-0001. */
-export function nextYearRef(name: string, prefix: string, width = 4) {
+export async function nextYearRef(name: string, prefix: string, width = 4) {
   const year = new Date().getFullYear();
-  const db = getDb();
-  const tx = db.transaction(() => {
-    const key = `${name}:${year}`;
-    const row = db.prepare("SELECT value FROM counters WHERE name = ?").get(key) as
-      | { value: number }
-      | undefined;
-    const next = (row?.value ?? 0) + 1;
-    if (row) db.prepare("UPDATE counters SET value = ? WHERE name = ?").run(next, key);
-    else db.prepare("INSERT INTO counters (name, value) VALUES (?, ?)").run(key, next);
-    return `${prefix}-${year}-${String(next).padStart(width, "0")}`;
-  });
-  return tx();
+  const key = `${name}:${year}`;
+  const row = await get<{ value: number }>(
+    `INSERT INTO counters (name, value) VALUES (?, 1)
+     ON CONFLICT (name) DO UPDATE SET value = counters.value + 1
+     RETURNING value`,
+    [key],
+  );
+  return `${prefix}-${year}-${String(row?.value ?? 1).padStart(width, "0")}`;
 }

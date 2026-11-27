@@ -17,12 +17,12 @@ export default async function ActionsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const user = await requirePermission("actions.view");
-  const scope = getScope(user);
+  const scope = await getScope(user);
   const sp = await searchParams;
   const filters = parseFilters(sp);
   const priority = typeof sp.priority === "string" ? sp.priority : "";
-  const actions = listActions(scope, { ...filters, priority });
-  const stats = actionStats(scope);
+  const actions = await listActions(scope, { ...filters, priority });
+  const stats = await actionStats(scope);
 
   return (
     <div>
@@ -48,8 +48,8 @@ export default async function ActionsPage({
           <div className="min-w-44 flex-1"><label className="label">Search</label><div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3"><Search className="size-3.5 text-slate-400" /><input name="q" defaultValue={filters.q} placeholder="Action, finding or outlet" className="w-full bg-transparent py-2 text-sm outline-none" /></div></div>
           <div className="min-w-40"><label className="label">Status</label><select name="status" defaultValue={filters.status} className="select"><option value="">All statuses</option>{ACTION_STATUSES.map((status) => <option key={status.id} value={status.id}>{status.label}</option>)}<option value="overdue">Overdue</option></select></div>
           <div className="min-w-32"><label className="label">Priority</label><select name="priority" defaultValue={priority} className="select"><option value="">All</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></div>
-          <div className="min-w-36"><label className="label">Region</label><select name="region" defaultValue={filters.region} className="select"><option value="">All regions</option>{regions().map((region) => <option key={region.id} value={region.id}>{region.name}</option>)}</select></div>
-          <div className="min-w-44"><label className="label">Outlet</label><select name="outlet" defaultValue={filters.outlet} className="select"><option value="">All outlets</option>{outletsForScope(scope).map((outlet) => <option key={outlet.id} value={outlet.id}>{outlet.name}</option>)}</select></div>
+          <div className="min-w-36"><label className="label">Region</label><select name="region" defaultValue={filters.region} className="select"><option value="">All regions</option>{(await regions()).map((region) => <option key={region.id} value={region.id}>{region.name}</option>)}</select></div>
+          <div className="min-w-44"><label className="label">Outlet</label><select name="outlet" defaultValue={filters.outlet} className="select"><option value="">All outlets</option>{(await outletsForScope(scope)).map((outlet) => <option key={outlet.id} value={outlet.id}>{outlet.name}</option>)}</select></div>
           <div className="flex gap-2"><button className="btn-primary" type="submit">Filter</button><Link href="/actions" className="btn-secondary">Reset</Link></div>
         </div>
       </form>
