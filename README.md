@@ -1,36 +1,91 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Crunchies Internal Audit & Internal Control
 
-## Getting Started
+Enterprise internal audit management platform for Crunchies Fried Chicken — multi-branch audit planning, digital checklists, risk, fraud investigation, internal controls, corrective actions, reporting and executive assurance.
 
-First, run the development server:
+## Stack
+
+- **Next.js 16** App Router, React 19, TypeScript, Server Actions, route handlers
+- **SQLite** via `better-sqlite3` with WAL, SQL migrations, append-only triggers and a portable SQL schema
+- **Tailwind CSS 4** design system (navy sidebar, white canvas, Crunchies red, green/amber status)
+- **Recharts** analytics, **@react-pdf/renderer** PDF, **ExcelJS** XLSX
+- Custom **PBKDF2-SHA256** authentication, signed HttpOnly sessions, optional TOTP MFA
+- **PWA** service worker + IndexedDB offline checklist drafts
+
+## Run locally
 
 ```bash
+npm install
+npm run db:migrate
+npm run db:seed
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000. All demo accounts use password **`Audit@2026`**.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Role | Email |
+|---|---|
+| Head of Internal Audit | `head.audit@crunchiesfood.com` |
+| Internal Audit Manager | `audit.manager@crunchiesfood.com` |
+| Internal Auditor | `auditor@crunchiesfood.com` |
+| Regional Manager | `regional@crunchiesfood.com` (South West) |
+| Outlet Manager | `outlet@crunchiesfood.com` (Ikeja City Mall) |
+| Finance | `finance@crunchiesfood.com` |
+| Executive Management | `executive@crunchiesfood.com` |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The login page also has one-click demo account fill.
 
-## Learn More
+## Modules
 
-To learn more about Next.js, take a look at the following resources:
+Dashboard · Audit Planning · Outlet Audits · Audit Checklist builder · Findings · Risk Register · Fraud Investigation · Internal Controls · Corrective Actions · Reports · Outlets & Rankings · Staff & Auditors · Evidence Repository · Notifications · Settings · Activity Logs.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Key workflows
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. **Plan** one-off, monthly or quarterly audits and assign auditors.
+2. **Conduct** the weighted digital checklist with mandatory questions, evidence requirements, comments and offline drafts.
+3. **Submit** — mandatory/evidence validation, weighted scoring, audit locking and automatic findings for high/critical exceptions.
+4. **Remediate** — management response, CAPA actions, evidence, independent verification and Head-of-Audit closure approval.
+5. **Escalate** — critical findings create executive escalations and notifications automatically.
+6. **Report** — generate versioned, immutable report snapshots; open, print, export PDF/Excel.
+7. **Investigate** — restricted fraud cases with access grants, append-only hash-chained updates and closure approval.
+8. **Assure** — risk matrix, control testing, outlet comparison index, management analytics.
 
-## Deploy on Vercel
+## Security & auditability
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- Role-based access control with outlet/region scoping on every query.
+- Confidential fraud cases require explicit case access; executive accounts see only aggregate indicators.
+- Submitted audits and responses are immutable at application and SQLite trigger level.
+- Activity logs and fraud updates are append-only and hash-chained. The Logs page verifies chain integrity.
+- Secure evidence storage outside `public/`, served through an authenticated download route with access logging and SHA-256 checksums.
+- Session records, login history, password reset revocation, optional TOTP MFA and demo reset.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Scripts
+
+```bash
+npm run dev          # development
+npm run build        # production build
+npm start            # production server
+npm run lint         # ESLint
+npm run typecheck    # tsc --noEmit
+npm test             # Vitest unit tests
+npm run db:migrate   # apply SQL migrations
+npm run db:seed      # reset + seed demo data
+npm run smoke        # authenticated route/API smoke test (server must be running on :3100)
+```
+
+`npm run smoke` expects a production server: `npm start -- -p 3100`.
+
+## Configuration
+
+Copy `.env.example` to `.env.local` and set `SESSION_SECRET`. Optional SMTP variables enable the email outbox processor in **Settings**.
+
+## Demo data
+
+42 users, 24 outlets across 6 Nigerian regions, 74 audits, 90+ checklist questions, findings, CAPA actions, 24 risks, 32 controls, 8 confidential fraud cases, 44 reports, 191 evidence records and hash-chained activity history.
+
+## Notes / production hardening
+
+- SQLite is used for a zero-setup local deployment; the SQL schema is PostgreSQL-portable. Move the data layer to PostgreSQL/Supabase for multi-instance production.
+- Local evidence storage can be replaced with S3/Supabase Storage; the authenticated file route and metadata model stay the same.
+- Email delivery requires SMTP configuration; without it notifications remain in-app and the outbox is marked skipped.
+- Offline mode covers checklist answers and drafts. Evidence upload and final audit submission require connectivity for server-side validation.
+- Demo credentials and seeded data are fictional and must be removed before a real deployment.
