@@ -41,9 +41,10 @@ function pool() {
     const created = new Pool({
       connectionString: url,
       ssl: sslConfig(url),
-      max: Number(process.env.PG_POOL_MAX || 5),
-      idleTimeoutMillis: 30_000,
+      max: Number(process.env.PG_POOL_MAX || 1),
+      idleTimeoutMillis: 5_000,
       connectionTimeoutMillis: 15_000,
+      allowExitOnIdle: true,
     });
     created.on("error", (error) => {
       console.error("Postgres pool error", error.message);
